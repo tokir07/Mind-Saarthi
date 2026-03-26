@@ -1,3 +1,4 @@
+print("✅ CHAT FUNCTION HIT")
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from transformers import pipeline
@@ -5,13 +6,18 @@ from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import pymongo
 from bson.objectid import ObjectId
-import datetime
-
 import os
+import traceback
+import datetime
 from dotenv import load_dotenv
 from google import genai
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-load_dotenv()
+# Force load .env from the current script directory
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path=env_path)
+print(f"DEBUG: Loaded .env from {env_path}")
+print(f"DEBUG: GEMINI_API_KEY value: {os.getenv('GEMINI_API_KEY')[:5] if os.getenv('GEMINI_API_KEY') else 'NONE'}")
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for frontend
@@ -23,14 +29,16 @@ bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 
 # Google Gemini API Chatbot Configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 gemini_client = None
-if GEMINI_API_KEY:
+if GEMINI_API_KEY and GEMINI_API_KEY not in ["", "your_gemini_api_key_here"]:
     try:
         gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        print("Successfully configured Gemini API for Chatbot.")
+        print(f"✅ Successfully configured Gemini API for Chatbot. Key starts with: {GEMINI_API_KEY[:8]}...")
     except Exception as e:
-        print(f"Failed to configure Gemini API: {e}")
+        print(f"❌ Failed to configure Gemini API: {e}")
+else:
+    print("⚠️  GEMINI_API_KEY not set or is placeholder — chatbot will use rule-based fallback.")
 
 # MongoDB Connection
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://tokirkhan00291_db_user:Rehan07@ac-hibhg1p-shard-00-00.3aae3if.mongodb.net:27017,ac-hibhg1p-shard-00-01.3aae3if.mongodb.net:27017,ac-hibhg1p-shard-00-02.3aae3if.mongodb.net:27017/?ssl=true&replicaSet=atlas-129ewi-shard-0&authSource=admin&retryWrites=true&w=majority")
@@ -108,64 +116,8 @@ def get_risk_level(text, sentiment_result):
             
     return "Low"
 
-def generate_response(risk_level, text, context=""):
-    # Smart Recommendation Engine (Rule-based mix)
-    text_lower = text.lower()
-    suggestion = ""
-    if risk_level == "High":
-        suggestion = "Please consider speaking to a professional therapist or a crisis helpline."
-    elif "sleep" in text_lower:
-        suggestion = "Try maintaining a consistent sleep schedule."
-    elif "stress" in text_lower or "tired" in text_lower:
-        suggestion = "Try breathing exercises or taking a short break to relax."
-
-    if gemini_client:
-        try:
-            prompt = f"""You are a mental health assistant named MindSaarthi.
-
-User history:
-{context}
-
-Current message:
-{text}
-
-Instructions:
-- Be empathetic
-- Detect emotional state
-- Give personalized advice
-- Suggest coping strategies
-- Keep response human-like and natural (2-3 sentences max)
-- Do not use markdown format like **
-
-Analyzed current risk level: {risk_level}.
-"""
-            response = gemini_client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt
-            )
-            ai_reply = response.text.replace('*', '')  # Remove any stray markdown
-            
-            # Combine AI output with rule-based recommendation
-            if suggestion and suggestion not in ai_reply:
-                ai_reply = f"{ai_reply} {suggestion}"
-                
-            return ai_reply
-        except Exception as e:
-            print(f"LLM generation failed, falling back to rule-based: {e}")
-
-    # Fallback Rule-based logic
-    fallback_reply = ""
-    if risk_level == "High":
-        fallback_reply = "I'm really sorry you're feeling this way. You're not alone, and there is help available. Your life is valuable and things can get better."
-    elif risk_level == "Moderate":
-        fallback_reply = "It sounds like you're carrying a heavy load right now. I'm here for you. It's completely normal to feel this way sometimes."
-    else: # Low
-        fallback_reply = "I appreciate you sharing that with me! How has the rest of your day been? Feel free to talk about whatever is on your mind, I'm always here to listen."
-
-    if suggestion:
-        fallback_reply += f" {suggestion}"
-
-    return fallback_reply
+# ---- Response Generation (Handled In-Line in /chat for now) ----
+# Note: Manual Gemini block is currently active inside the /chat route.
 
 # ---- Auth Endpoints ----
 
@@ -228,6 +180,20 @@ def login():
 
     return jsonify({"error": "Invalid email or password"}), 401
 
+# ---- Test Endpoint ----
+@app.route('/test-gemini', methods=['GET'])
+def test_gemini():
+    if not gemini_client:
+        return jsonify({"status": "error", "message": "Gemini client not initialized"}), 500
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents="Say 'System is Alive!'"
+        )
+        return jsonify({"status": "success", "response": response.text.strip()})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # ---- Protected Endpoints ----
 
 @app.route('/dashboard', methods=['GET'])
@@ -269,68 +235,95 @@ def dashboard():
         "mood_history": history
     })
 
-@app.route('/chat', methods=['POST'])
-@jwt_required(optional=True)  # Optional so guest demo still works
-def chat():
-    data = request.json
-    user_id = get_jwt_identity() # None if guest
+# ---- 🧠 Sentimental Fallback Engine (In case of 429 Quota Errors) ----
+def get_hardcoded_empathy(risk_level, sentiment):
+    if risk_level == "High":
+        return "I can hear how painful this is for you. Please know that you're not alone, and reaching out is a brave first step. I strongly encourage you to connect with a crisis support professional who can provide the immediate care you deserve."
+    if risk_level == "Moderate":
+        return "It sounds like you're carrying a lot on your shoulders right now. I'm here to listen. Taking a small moment to breathe and focus on your well-being can sometimes help when things feel overwhelming."
+    if sentiment == "NEGATIVE":
+        return "I'm sorry you're going through a tough time. It's completely valid to feel this way. Tell me more about what's on your mind—I'm here for you."
+    return "I appreciate you sharing your thoughts with me. How else can I support you today? I'm always here to listen."
 
-    if not data or 'message' not in data:
-        return jsonify({"error": "No message provided"}), 400
+@app.route('/chat', methods=['POST'])
+@jwt_required(optional=True)
+def chat():
+    print("\n" + "="*50)
+    print("🧠 NEW CHAT REQUEST RECEIVED")
+    print("="*50)
+
+    try:
+        data = request.json
+        user_message = data.get('message', '')
+        user_id = get_jwt_identity()
         
-    user_message = data['message']
-    
-    # Run sentiment analysis
-    sentiment_result = None
-    sentiment_label = "NEUTRAL"
-    if sentiment_pipeline:
-        try:
-            sentiment_result = sentiment_pipeline(user_message)
-            sentiment_label = sentiment_result[0]['label']
-        except Exception as e:
-            print(f"Sentiment analysis failed: {e}")
-    
-    # Determine risk
-    risk_level = get_risk_level(user_message, sentiment_result)
-    
-    # 1. Context Memory (MOST IMPORTANT)
-    context = ""
-    if user_id:
-        user_history = []
-        if db_con:
-            # Get last 5 messages, sort descending, then reverse for chronological order
-            history_cursor = chats_collection.find({"user_id": user_id}).sort("timestamp", -1).limit(5)
-            user_history = list(history_cursor)[::-1]
+        print(f"📥 Input: {user_message[:60]}")
+
+        # 1. Pipeline Analysis
+        sentiment_result = None
+        sentiment_label = "NEUTRAL"
+        if sentiment_pipeline:
+            try:
+                sentiment_result = sentiment_pipeline(user_message)
+                sentiment_label = sentiment_result[0]['label']
+            except: pass
+        
+        risk_level = get_risk_level(user_message, sentiment_result)
+        print(f"📊 Analysis -> Risk: {risk_level}, Sentiment: {sentiment_label}")
+
+        # 2. Context Loading
+        context = ""
+        if user_id:
+            user_history = list(chats_collection.find({"user_id": user_id}).sort("timestamp", -1).limit(5))[::-1]
+            for c in user_history:
+                context += f"User: {c.get('user_message', '')}\nMindSaarthi: {c.get('bot_reply', '')}\n"
+
+        # 3. AI Brain Call
+        bot_reply = ""
+        if not gemini_client:
+            print("⚠️ [SYSTEM] Gemini client NOT initialized. Using fallback.")
+            bot_reply = get_hardcoded_empathy(risk_level, sentiment_label)
         else:
-            user_chats = [c for c in mock_chats if c["user_id"] == user_id]
-            user_history = user_chats[-5:]
-            
-        for c in user_history:
-            context += f"User: {c.get('user_message', '')}\nMindSaarthi: {c.get('bot_reply', '')}\n"
-    
-    # Generate Reply
-    bot_reply = generate_response(risk_level, user_message, context)
-    
-    # Store history if logged in
-    if user_id:
-        chat_doc = {
-            "user_id": user_id,
-            "user_message": user_message,
-            "bot_reply": bot_reply,
+            try:
+                print("🔥 [API] Calling Gemini 2.0 Flash...")
+                prompt = f"Role: MindSaarthi AI\nContext: {context}\nUser: {user_message}\nTask: 2-3 line human-like empathetic response based on Risk: {risk_level}."
+                
+                response = gemini_client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt
+                )
+                bot_reply = response.text.strip().replace("*", "")
+                print(f"✅ [API] Success: {bot_reply[:60]}...")
+            except Exception as gem_err:
+                print(f"❌ [API] Gemini Call Failed: {gem_err}")
+                # Use our smart fallback if API is down or 429
+                bot_reply = get_hardcoded_empathy(risk_level, sentiment_label)
+                if "429" in str(gem_err):
+                    print("⚠️ [QUOTA] 429 Resource Exhausted. Switching to Smart Fallback.")
+
+        # 4. Persistence
+        if user_id:
+            chat_doc = {
+                "user_id": user_id,
+                "user_message": user_message,
+                "bot_reply": bot_reply,
+                "sentiment": sentiment_label,
+                "risk": risk_level,
+                "timestamp": datetime.datetime.now()
+            }
+            if db_con: chats_collection.insert_one(chat_doc)
+            else: mock_chats.append(chat_doc)
+
+        return jsonify({
+            "reply": bot_reply,
             "sentiment": sentiment_label,
-            "risk": risk_level,
-            "timestamp": datetime.datetime.now()
-        }
-        if db_con:
-            chats_collection.insert_one(chat_doc)
-        else:
-            mock_chats.append(chat_doc)
-    
-    return jsonify({
-        "reply": bot_reply,
-        "sentiment": sentiment_label,
-        "risk": risk_level
-    })
+            "risk": risk_level
+        })
+
+    except Exception as fatal_err:
+        print(f"❌ [FATAL] Global Error: {fatal_err}")
+        traceback.print_exc()
+        return jsonify({"reply": "I'm experiencing a small temporary issue, but I'm still here for you. Tell me more?"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
