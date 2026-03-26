@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '../AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogOut, Activity, ExternalLink, Moon, Sun, Brain } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 
 const DashboardPage = ({ darkMode, toggleTheme }) => {
     const { user, token, logout } = useAuth();
@@ -19,9 +19,7 @@ const DashboardPage = ({ darkMode, toggleTheme }) => {
 
         const fetchDashboard = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/dashboard', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                const res = await api.get('/dashboard');
                 setDashboardData(res.data);
             } catch (err) {
                 console.error("Dashboard error:", err);

@@ -2,3 +2,9 @@ flask
 flask-cors
 transformers
 torch
+openai
+python-dotenv
+tenacity
+pymongo
+flask-bcrypt
+flask-jwt-extended

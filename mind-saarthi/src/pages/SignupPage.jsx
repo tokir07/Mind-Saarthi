@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Brain, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 
 const SignupPage = () => {
     const [name, setName] = useState('');
@@ -19,7 +19,7 @@ const SignupPage = () => {
         setLoading(true);
 
         try {
-            await axios.post('http://localhost:5000/signup', { name, email, password });
+            await api.post('/signup', { name, email, password });
             navigate('/login');
         } catch (err) {
             setError(err.response?.data?.error || "Failed to create account. Please try again.");

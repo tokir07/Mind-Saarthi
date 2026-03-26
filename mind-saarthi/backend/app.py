@@ -10,14 +10,14 @@ import os
 import traceback
 import datetime
 from dotenv import load_dotenv
-from google import genai
+from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Force load .env from the current script directory
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path=env_path)
 print(f"DEBUG: Loaded .env from {env_path}")
-print(f"DEBUG: GEMINI_API_KEY value: {os.getenv('GEMINI_API_KEY')[:5] if os.getenv('GEMINI_API_KEY') else 'NONE'}")
+print(f"DEBUG: OPENROUTER_API_KEY value: {os.getenv('OPENROUTER_API_KEY')[:5] if os.getenv('OPENROUTER_API_KEY') else 'NONE'}")
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for frontend
@@ -28,17 +28,21 @@ app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=24)
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 
-# Google Gemini API Chatbot Configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-gemini_client = None
-if GEMINI_API_KEY and GEMINI_API_KEY not in ["", "your_gemini_api_key_here"]:
+# OpenRouter AI Chatbot Configuration
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+ai_client = None
+if OPENROUTER_API_KEY and OPENROUTER_API_KEY not in ["", "your_api_key_here"]:
     try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        print(f"✅ Successfully configured Gemini API for Chatbot. Key starts with: {GEMINI_API_KEY[:8]}...")
+        # OpenRouter uses the OpenAI-compatible API
+        ai_client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY,
+        )
+        print(f"✅ Successfully configured OpenRouter API for Chatbot. Key starts with: {OPENROUTER_API_KEY[:8]}...")
     except Exception as e:
-        print(f"❌ Failed to configure Gemini API: {e}")
+        print(f"❌ Failed to configure OpenRouter API: {e}")
 else:
-    print("⚠️  GEMINI_API_KEY not set or is placeholder — chatbot will use rule-based fallback.")
+    print("⚠️  OPENROUTER_API_KEY not set or is placeholder — chatbot will use rule-based fallback.")
 
 # MongoDB Connection
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://tokirkhan00291_db_user:Rehan07@ac-hibhg1p-shard-00-00.3aae3if.mongodb.net:27017,ac-hibhg1p-shard-00-01.3aae3if.mongodb.net:27017,ac-hibhg1p-shard-00-02.3aae3if.mongodb.net:27017/?ssl=true&replicaSet=atlas-129ewi-shard-0&authSource=admin&retryWrites=true&w=majority")
@@ -181,16 +185,16 @@ def login():
     return jsonify({"error": "Invalid email or password"}), 401
 
 # ---- Test Endpoint ----
-@app.route('/test-gemini', methods=['GET'])
-def test_gemini():
-    if not gemini_client:
-        return jsonify({"status": "error", "message": "Gemini client not initialized"}), 500
+@app.route('/test-ai', methods=['GET'])
+def test_ai():
+    if not ai_client:
+        return jsonify({"status": "error", "message": "AI client not initialized"}), 500
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents="Say 'System is Alive!'"
+        response = ai_client.chat.completions.create(
+            model="openrouter/free", # OpenRouter model name
+            messages=[{"role": "user", "content": "Say 'System is Alive!'"}]
         )
-        return jsonify({"status": "success", "response": response.text.strip()})
+        return jsonify({"status": "success", "response": response.choices[0].message.content.strip()})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -280,25 +284,29 @@ def chat():
 
         # 3. AI Brain Call
         bot_reply = ""
-        if not gemini_client:
-            print("⚠️ [SYSTEM] Gemini client NOT initialized. Using fallback.")
+        if not ai_client:
+            print("⚠️ [SYSTEM] AI client NOT initialized. Using fallback.")
             bot_reply = get_hardcoded_empathy(risk_level, sentiment_label)
         else:
             try:
-                print("🔥 [API] Calling Gemini 2.0 Flash...")
+                print("🔥 [API] Calling OpenRouter (Gemini 2.0 Flash via OR)...")
                 prompt = f"Role: MindSaarthi AI\nContext: {context}\nUser: {user_message}\nTask: 2-3 line human-like empathetic response based on Risk: {risk_level}."
                 
-                response = gemini_client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=prompt
+                response = ai_client.chat.completions.create(
+                    model="openrouter/free",
+                    messages=[{"role": "user", "content": prompt}],
+                    extra_headers={
+                        "HTTP-Referer": "https://mindsaarthi.com", # Optional, for OpenRouter rankings
+                        "X-Title": "MindSaarthi AI", # Optional
+                    }
                 )
-                bot_reply = response.text.strip().replace("*", "")
+                bot_reply = response.choices[0].message.content.strip().replace("*", "")
                 print(f"✅ [API] Success: {bot_reply[:60]}...")
-            except Exception as gem_err:
-                print(f"❌ [API] Gemini Call Failed: {gem_err}")
+            except Exception as ai_err:
+                print(f"❌ [API] AI Call Failed: {ai_err}")
                 # Use our smart fallback if API is down or 429
                 bot_reply = get_hardcoded_empathy(risk_level, sentiment_label)
-                if "429" in str(gem_err):
+                if "429" in str(ai_err):
                     print("⚠️ [QUOTA] 429 Resource Exhausted. Switching to Smart Fallback.")
 
         # 4. Persistence

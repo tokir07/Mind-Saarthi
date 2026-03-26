@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Brain, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import { useAuth } from '../AuthContext';
 
 const LoginPage = () => {
@@ -20,7 +20,7 @@ const LoginPage = () => {
         setLoading(true);
 
         try {
-            const res = await axios.post('http://localhost:5000/login', { email, password });
+            const res = await api.post('/login', { email, password });
             login(res.data.user, res.data.token);
             navigate('/dashboard');
         } catch (err) {
