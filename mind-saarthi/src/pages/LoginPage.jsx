@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Brain, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../AuthContext';
+import LogoImg from '../assets/mind-saarthi-logo.png';
 
 const LoginPage = () => {
     const [email, setEmail] = useState('');
@@ -44,9 +45,9 @@ const LoginPage = () => {
             >
                 <div className="flex justify-center mb-8">
                     <Link to="/" className="flex items-center gap-2">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white shadow-lg shadow-primary/30">
-                            <Brain size={28} />
-                        </div>
+                        <span className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                            MindSaarthi <span className="text-primary dark:text-primary-light">AI</span>
+                        </span>
                     </Link>
                 </div>
 

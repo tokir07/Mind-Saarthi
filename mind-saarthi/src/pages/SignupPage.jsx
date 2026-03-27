@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Brain, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api';
+import LogoImg from '../assets/mind-saarthi-logo.png';
 
 const SignupPage = () => {
     const [name, setName] = useState('');
@@ -41,10 +42,8 @@ const SignupPage = () => {
                 className="w-full max-w-md glass-card bg-white/70 dark:bg-slate-900/70 border border-white/20 dark:border-slate-800/50 p-8 md:p-10 rounded-3xl shadow-2xl relative z-10 backdrop-blur-xl"
             >
                 <div className="flex justify-center mb-6">
-                    <Link to="/" className="flex items-center gap-2 border-b-2 border-transparent hover:border-primary/30 transition-all pb-1">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white shadow-lg shadow-primary/30">
-                            <Brain size={24} />
-                        </div>
+                    <Link to="/" className="flex items-center gap-2 border-b-2 border-transparent hover:border-primary/30 transition-all pb-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                        MindSaarthi <span className="text-primary dark:text-primary-light">AI</span>
                     </Link>
                 </div>
 

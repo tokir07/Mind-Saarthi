@@ -1,7 +1,6 @@
 import React from 'react';
-import { Brain, Heart, ShieldCheck } from 'lucide-react';
+import { Heart, ShieldCheck } from 'lucide-react';
 import { FaTwitter, FaLinkedin, FaGithub } from 'react-icons/fa';
-
 const Footer = () => {
     return (
         <footer className="bg-slate-50 dark:bg-[#0B1121] border-t border-slate-200 dark:border-slate-800 pt-16 pb-8 text-slate-600 dark:text-slate-400">
@@ -10,9 +9,6 @@ const Footer = () => {
 
                     <div className="md:col-span-1 space-y-6">
                         <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white shadow-md">
-                                <Brain size={18} />
-                            </div>
                             <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
                                 MindSaarthi <span className="text-primary dark:text-primary-light">AI</span>
                             </span>

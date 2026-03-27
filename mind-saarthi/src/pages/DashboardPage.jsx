@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { LogOut, Activity, ExternalLink, Moon, Sun, Brain } from 'lucide-react';
+import { LogOut, Activity, Moon, Sun, Brain } from 'lucide-react';
 import api from '../api';
+import LogoImg from '../assets/mind-saarthi-logo.png';
 
 const DashboardPage = ({ darkMode, toggleTheme }) => {
     const { user, token, logout } = useAuth();
@@ -52,10 +53,7 @@ const DashboardPage = ({ darkMode, toggleTheme }) => {
             <header className="glass shadow-sm py-4 sticky top-0 z-50">
                 <div className="container mx-auto px-6 max-w-6xl flex justify-between items-center">
                     <Link to="/" className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white shadow-md">
-                            <Brain size={20} />
-                        </div>
-                        <span className="text-xl font-bold tracking-tight hidden sm:block">MindSaarthi</span>
+                        <img src={LogoImg} alt="Mind Saarthi Logo" className="h-10 w-auto object-contain" />
                     </Link>
 
                     <div className="flex items-center gap-4">
