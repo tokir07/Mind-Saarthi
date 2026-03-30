@@ -46,8 +46,8 @@ CORS(app) # Enable CORS for frontend
 # Use environment variable for Frontend URL, fallback to * for dev
 FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
 
-# Initialize SocketIO with requested production-grade config
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+# Initialize SocketIO with fallback configuration for high Python versions
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 SOOTHING_NAMES = [
     "Quiet Lotus", "Brave Willow", "Zen Panda", "Mindful Breeze",
