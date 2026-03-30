@@ -486,6 +486,15 @@ def get_ai_behavioral_insight(data_type, values):
     except:
         return "Your patterns show a clear correlation between stress and daily energy levels."
 
+# ---- Server Health Check ----
+@app.route('/', methods=['GET'])
+def health_check():
+    return jsonify({
+        "status": "online",
+        "message": "MindSaarthi API is running successfully!",
+        "timestamp": datetime.datetime.now().isoformat()
+    }), 200
+
 # ---- Auth Endpoints ----
 
 @app.route('/signup', methods=['POST'])
@@ -609,7 +618,7 @@ def get_hardcoded_empathy(risk_level, sentiment):
     if risk_level == "Moderate":
         return "It sounds like you're carrying a lot on your shoulders right now. I'm here to listen. Taking a small moment to breathe and focus on your well-being can sometimes help when things feel overwhelming."
     if sentiment == "NEGATIVE":
-        return "I'm sorry you're going through a tough time. It's completely valid to feel this way. Tell me more about what's on your mindI'm here for you."
+        return "I'm sorry you're going through a tough time. It's completely valid to feel this way. Tell me more about what's on your mind. I'm here for you."
     return "I appreciate you sharing your thoughts with me. How else can I support you today? I'm always here to listen."
 
 @app.route('/chat', methods=['POST'])
