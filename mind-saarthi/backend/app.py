@@ -1,9 +1,7 @@
 print("--- BACKEND STARTING ---")
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-# Heavy NLP pipeline disabled for deployment stability (avoids 30s load delay)
-pipeline = None
-
+from transformers import pipeline
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import pymongo
@@ -16,7 +14,7 @@ import json
 import io
 from dotenv import load_dotenv
 from openai import OpenAI
-from twilio.rest import Client  
+from twilio.rest import Client
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 # reportlab for PDF generation
@@ -39,12 +37,7 @@ print(f"DEBUG: OPENROUTER_API_KEY value: {os.getenv('OPENROUTER_API_KEY')[:5] if
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for frontend
-
-# Use environment variable for Frontend URL, fallback to * for dev
-FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
-
-# Initialize SocketIO with fallback configuration for high Python versions
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 SOOTHING_NAMES = [
     "Quiet Lotus", "Brave Willow", "Zen Panda", "Mindful Breeze",
@@ -158,46 +151,68 @@ try:
 except Exception as e:
     print("Demo user init failed:", e)
 
-# --- Lightweight Sentiment Fallback (Replacement for heavy NLP) ---
-def get_simple_sentiment(text):
-    text = text.lower()
-    negative_words = ["sad", "hate", "bad", "angry", "worst", "kill", "die", "hurt", "pain", "hopeless"]
-    positive_words = ["happy", "good", "great", "love", "hope", "better", "best", "thank"]
-    
-    neg_count = sum(1 for w in negative_words if w in text)
-    pos_count = sum(1 for w in positive_words if w in text)
-    
-    if neg_count > pos_count: return "NEGATIVE"
-    if pos_count > neg_count: return "POSITIVE"
-    return "NEUTRAL"
-
-sentiment_pipeline = None # Disabled heavy local model
+# Load sentiment-analysis pipeline (uses distilbert internally, outputs POSITIVE/NEGATIVE)
+print("Loading NLP pipeline... This may take a moment.")
+try:
+    sentiment_pipeline = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+    print("Pipeline loaded!")
+except Exception as e:
+    print(f"Error loading pipeline: {e}")
+    sentiment_pipeline = None
 
 # ---- Helper Functions ----
-def get_risk_level(text, sentiment_result):
+def get_risk_level(text, sentiment_result=None):
+    """Deep AI-driven risk assessment with robust keyword fallback."""
     text_lower = text.lower()
     
-    # 1. Hardcoded High Risk Keywords (Safety Priority)
+    # 1. Expanded High Risk Keywords (Safety Priority)
     high_risk_keywords = [
-        "suicide", "kill myself", "end my life", "i don't want to live", 
-        "die", "give up", "worthless", "hopeless", "better off dead", 
-        "no reason to stay", "self harm", "hurting myself", "hanging", "overdose"
+        "suicide", "kill myself", "killing myself", "end my life", "ending my life",
+        "i don't want to live", "die", "death", "goodbye world", "final message",
+        "give up", "worthless", "hopeless", "better off dead", "ready to go",
+        "no reason to stay", "self harm", "hurting myself", "hanging", "overdose",
+        "cutting", "jump", "shooting", "poison", "end it all", "ending it all"
     ]
+    
     if any(k in text_lower for k in high_risk_keywords):
         return "High"
-    
-    # 2. Hardcoded Moderate Risk keywords
-    moderate_risk_keywords = ["stress", "tired", "anxious", "overwhelmed", "worry", "panic", "sad", "alone", "exhausted", "burnout"]
+
+    # 2. AI Assessment for Indirect Signs (e.g. hopelessness, isolation)
+    if ai_client:
+        try:
+            # Stricter prompt for safety
+            prompt = f"""
+            CRITICAL SAFETY ANALYSIS:
+            Analyze user message for acute risk of self-harm or suicide.
+            User Message: "{text}"
+            
+            Is this user in a mental health CRISIS or expressing intent/ideation?
+            Reply ONLY with 'High' or 'Low'.
+            """
+            response = ai_client.chat.completions.create(
+                model="google/gemini-2.0-flash-001",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            ai_risk = (response.choices[0].message.content or "").strip()
+            if "High" in ai_risk:
+                return "High"
+        except Exception as e:
+            print(f"AI Risk Detection Error: {e}")
+
+    # 3. Sentiment & Moderate Keywords Fallback
+    moderate_risk_keywords = ["stress", "tired", "anxious", "overwhelmed", "worry", "panic", "sad", "alone", "exhausted", "burnout", "depressed", "fucking stuff"]
     if any(word in text_lower for word in moderate_risk_keywords):
+        # If user is using moderate distress words + highly negative sentiment
+        if sentiment_result and sentiment_result[0]['label'] == 'NEGATIVE' and sentiment_result[0]['score'] > 0.98:
+            return "High"
         return "Moderate"
         
-    # 3. Fallback to sentiment model
+    # 4. Global Sentiment Fallback
     if sentiment_result:
         label = sentiment_result[0]['label']
         score = sentiment_result[0]['score']
-        
-        if label == "NEGATIVE" and score > 0.9:
-            return "Moderate"
+        if label == "NEGATIVE" and score > 0.95:
+            return "High" if score > 0.99 else "Moderate"
             
     return "Low"
 
@@ -485,15 +500,6 @@ def get_ai_behavioral_insight(data_type, values):
     except:
         return "Your patterns show a clear correlation between stress and daily energy levels."
 
-# ---- Server Health Check ----
-@app.route('/', methods=['GET'])
-def health_check():
-    return jsonify({
-        "status": "online",
-        "message": "MindSaarthi API is running successfully!",
-        "timestamp": datetime.datetime.now().isoformat()
-    }), 200
-
 # ---- Auth Endpoints ----
 
 @app.route('/signup', methods=['POST'])
@@ -617,14 +623,12 @@ def get_hardcoded_empathy(risk_level, sentiment):
     if risk_level == "Moderate":
         return "It sounds like you're carrying a lot on your shoulders right now. I'm here to listen. Taking a small moment to breathe and focus on your well-being can sometimes help when things feel overwhelming."
     if sentiment == "NEGATIVE":
-        return "I'm sorry you're going through a tough time. It's completely valid to feel this way. Tell me more about what's on your mind. I'm here for you."
+        return "I'm sorry you're going through a tough time. It's completely valid to feel this way. Tell me more about what's on your mindI'm here for you."
     return "I appreciate you sharing your thoughts with me. How else can I support you today? I'm always here to listen."
 
 @app.route('/chat', methods=['POST'])
 @jwt_required(optional=True)
 def chat():
-    import time
-    start_time = time.time()
     print("\n" + "="*50)
     print(" NEW CHAT REQUEST RECEIVED")
     print("="*50)
@@ -640,15 +644,25 @@ def chat():
         # 1. Pipeline Analysis
         sentiment_result = None
         sentiment_label = "NEUTRAL"
-        if sentiment_pipeline:
-             try:
-                 sentiment_result = sentiment_pipeline(user_message)
-                 sentiment_label = sentiment_result[0]['label']
-             except: pass
-        else:
-             sentiment_label = get_simple_sentiment(user_message)
+        
+        # CPU Optimization: AI is much faster at remote inference than local CPU
+        # Skip slow transformer model if OpenRouter is active
+        if not ai_client and sentiment_pipeline:
+            try:
+                sentiment_result = sentiment_pipeline(user_message)
+                sentiment_label = sentiment_result[0]['label']
+            except: pass
         
         risk_level = get_risk_level(user_message, sentiment_result)
+        
+        # Automated Alert for High Risk in 1-on-1 Chat
+        if risk_level == "High":
+             user_name = "MindSaarthi User"
+             if user_id:
+                u = users_collection.find_one({"_id": ObjectId(user_id)})
+                if u: user_name = u.get("name")
+             send_whatsapp_alert(0, 0, user_name + " (AI Chat)")
+             
         issue_type = detect_issue(user_message)
         coping_tip = get_coping_suggestion(issue_type)
         
@@ -742,7 +756,6 @@ def chat():
             if db_con and analytics_collection is not None:
                 analytics_collection.insert_one(analytics_doc)
 
-        print(f" [SUCCESS] Request Processed in {round(time.time() - start_time, 2)}s")
         return jsonify({
             "reply": bot_reply,
             "suggestion": coping_tip,
@@ -1305,8 +1318,9 @@ def handle_group_message(data):
     sentiment_result = None
     risk_level = "Low"
     
+    # Optimization: Skip slow local transformer if we have a remote AI available or it's a sticker
     if not is_sticker:
-        if sentiment_pipeline:
+        if not ai_client and sentiment_pipeline:
             try:
                 sentiment_result = sentiment_pipeline(message)
             except: pass
@@ -1337,10 +1351,18 @@ def handle_group_message(data):
             'msg': 'High-risk content detected. Please check our resources page or call 988.',
             'helpline': '988'
         }, room=request.sid)
+        
+        # Trigger Twilio WhatsApp Alert to trusted contact
+        user_name = "Anonymous"
+        if user and not user.get('anonymous_mode'):
+            user_name = user.get('name', 'User')
+            
+        send_whatsapp_alert(0, 0, user_name + " (Group Chat)")
 
     # 3. AI Bot Reaction (Reactive)
+    # Background this so it doesn't block the message flow
     if random.random() < 0.3: # 30% chance for bot to respond
-        trigger_bot_response(room, message)
+        socketio.start_background_task(trigger_bot_response, room, message)
 
 def trigger_bot_response(room, user_message):
     """AI Bot in Group Reacts to the conversation."""
@@ -1362,7 +1384,7 @@ def trigger_bot_response(room, user_message):
         )
         bot_reply = response.choices[0].message.content.strip()
         
-        emit('new_message', {
+        socketio.emit('new_message', {
             'id': str(ObjectId()),
             'user': "Saarthi Bot ✨",
             'is_bot': True,
@@ -1382,18 +1404,65 @@ def handle_reaction(data):
         'type': reaction
     }, room=room)
 
+VOICE_BUFFERS = {} # user_id -> bytearray
+
 @socketio.on('voice_chunk')
 def handle_voice(data):
-    # For push-to-talk: broadcast chunk to room
     room = data.get('room')
     user_id = data.get('user_id')
     audio_data = data.get('audio') # base64 chunk
     
+    # Broadcast to others
     emit('incoming_voice', {
         'user_id': user_id,
         'audio': audio_data
     }, room=room, include_self=False)
 
+    # Risk Detection Buffer
+    if user_id not in VOICE_BUFFERS:
+        VOICE_BUFFERS[user_id] = bytearray()
+    
+    try:
+        decoded = base64.b64decode(audio_data)
+        VOICE_BUFFERS[user_id].extend(decoded)
+        
+        # If buffer is getting large (approx 5 sec of audio), analyze a sample
+        if len(VOICE_BUFFERS[user_id]) > 80000: # Simple threshold
+            socketio.start_background_task(analyze_voice_safety, user_id, list(VOICE_BUFFERS[user_id]), room)
+            VOICE_BUFFERS[user_id] = bytearray() # Clear
+    except: pass
+
+def analyze_voice_safety(user_id, audio_bytes, room):
+    """Analyze audio bytes for crisis using multimodal Gemini 2.0."""
+    if not ai_client: return
+    
+    try:
+        # Prompt for audio analysis
+        prompt = "Listen to this audio. Is there a mental health crisis? Reply ONLY 'High' or 'Low'."
+        # Multimodal call using base64 audio
+        audio_b64 = base64.b64encode(bytes(audio_bytes)).decode('utf-8')
+        
+        response = ai_client.chat.completions.create(
+            model="google/gemini-2.0-flash-001",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:audio/wav;base64,{audio_b64}"}} # GPT-style multimodal format
+                ]
+            }]
+        )
+        
+        risk = (response.choices[0].message.content or "").strip()
+        if "High" in risk:
+            socketio.emit('crisis_alert', {
+                'msg': 'High-risk content detected in your voice message. We are here to support you.',
+                'helpline': '988'
+            }, to=None, room=room) # Broadcast warning safely or to user
+            
+            # Send Twilio
+            send_whatsapp_alert(0, 0, f"User {user_id} (Voice Chat)")
+    except: pass
+
 if __name__ == '__main__':
-    port = int(os.getenv("PORT", 5000))
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+    socketio.run(app, debug=True, port=5000, use_reloader=False)

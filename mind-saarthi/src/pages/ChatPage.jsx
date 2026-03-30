@@ -129,16 +129,8 @@ const ChatPage = () => {
             const pos = await new Promise((res, rej) => 
                 navigator.geolocation.getCurrentPosition(p => res({lat:p.coords.latitude, lng:p.coords.longitude}), rej)
             );
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/emergency-confirm`, {
-                method: 'POST',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(pos)
-            });
-            const data = await response.json();
-            setCrisisData(data);
+            const response = await axios.post('http://localhost:5000/emergency-confirm', pos, {headers:{Authorization:`Bearer ${token}`}});
+            setCrisisData(response.data);
             setShowConsent(false);
             setMessages(prev => [...prev, {
                 id: Date.now(), type: 'bot', 
@@ -169,27 +161,19 @@ const ChatPage = () => {
         setIsTyping(true);
 
         try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/chat`, {
-                method: 'POST',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ message: userText })
-            });
-            const data = await response.json();
+            const resp = await axios.post('http://localhost:5000/chat', {message:userText}, {headers:{Authorization:`Bearer ${token}`}});
             const botMsg = { 
                 id: Date.now()+1, 
                 type:'bot', 
-                text:data.reply, 
-                risk:data.risk, 
-                sentiment:data.sentiment, 
-                suggestion: data.suggestion,
+                text:resp.data.reply, 
+                risk:resp.data.risk, 
+                sentiment:resp.data.sentiment, 
+                suggestion: resp.data.suggestion,
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
             };
             setMessages(prev => [...prev, botMsg]);
-            if (data.ask_consent) setShowConsent(true);
-            speakText(data.reply);
+            if (resp.data.ask_consent) setShowConsent(true);
+            speakText(resp.data.reply);
         } catch (error) {
             setMessages(prev => [...prev, { id:Date.now(), type:'bot', text:"Trouble connecting. I'm here though.", timestamp: new Date().toLocaleTimeString() }]);
         } finally { setIsTyping(false); }

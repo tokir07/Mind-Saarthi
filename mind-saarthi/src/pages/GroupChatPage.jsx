@@ -38,6 +38,7 @@ const GroupChatPage = () => {
     const [roomInfo, setRoomInfo] = useState({ name: 'Matching...', id: '' });
     const [anonymous, setAnonymous] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [mediaRecorder, setMediaRecorder] = useState(null);
     const [showStickers, setShowStickers] = useState(false);
     const [groupStats, setGroupStats] = useState({ mood: 72, stress: 30 });
     const scrollRef = useRef(null);
@@ -46,7 +47,7 @@ const GroupChatPage = () => {
         if (!token) navigate('/login');
 
         // Fetch user profile for anonymous status
-        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/profile`, {
+        fetch('http://localhost:5000/user/profile', {
             headers: { 'Authorization': `Bearer ${token}` }
         })
             .then(res => res.json())
@@ -132,10 +133,45 @@ const GroupChatPage = () => {
         });
     };
 
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            setMediaRecorder(recorder);
+            
+            recorder.ondataavailable = (e) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(e.data);
+                reader.onloadend = () => {
+                    const base64data = reader.result.split(',')[1];
+                    socket.emit('voice_chunk', {
+                        room: roomInfo.id,
+                        user_id: user?.id,
+                        audio: base64data
+                    });
+                };
+            };
+            
+            recorder.start(500); // 500ms chunks
+            setIsRecording(true);
+        } catch (err) {
+            console.error("Camera/Mic access denied", err);
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            setMediaRecorder(null);
+        }
+        setIsRecording(false);
+    };
+
     const toggleAnonymous = async () => {
         const newVal = !anonymous;
         setAnonymous(newVal);
-        await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/profile`, {
+        await fetch('http://localhost:5000/user/profile', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -390,8 +426,9 @@ const GroupChatPage = () => {
                                 <div className="flex items-center gap-3">
                                     <button
                                         type="button"
-                                        onMouseDown={() => setIsRecording(true)}
-                                        onMouseUp={() => setIsRecording(false)}
+                                        onMouseDown={startRecording}
+                                        onMouseUp={stopRecording}
+                                        onMouseLeave={stopRecording}
                                         className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 transition-all ${isRecording
                                                 ? 'bg-accent text-white shadow-lg shadow-accent/40 animate-pulse scale-110'
                                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'

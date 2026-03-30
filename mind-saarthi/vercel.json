@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "https://mind-saarthi-1.onrender.com/$1"
-    }
-  ]
-}
