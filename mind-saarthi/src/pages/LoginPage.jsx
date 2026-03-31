@@ -53,7 +53,7 @@ const LoginPage = () => {
 
             {/* Absolute Controls (Back & Theme) */}
             <div className="absolute top-6 left-6 z-50 flex items-center gap-4">
-                <Link to="/" className="p-2.5 bg-white/10 hover:bg-white/20 dark:bg-black/20 dark:hover:bg-black/40 backdrop-blur-md rounded-xl transition-all active:scale-95 text-[#175dc5] dark:text-slate-200">
+                <Link to="/" className="p-2.5 bg-white/100 hover:bg-white/20 dark:bg-black/20 dark:hover:bg-black/40 backdrop-blur-md rounded-xl transition-all active:scale-95 text-[#175dc5] dark:text-slate-200">
                     <ArrowLeft size={20} />
                 </Link>
                 <div className="text-[#175dc5] dark:text-slate-200">

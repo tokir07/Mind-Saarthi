@@ -36,13 +36,13 @@ const Navbar = () => {
                     animate={{ opacity: 1, x: 0 }}
                     className="flex-shrink-0"
                 >
-                    <Link to="/" className="flex items-center gap-2 group">
+                    {/* <Link to="/" className="flex items-center gap-2 group">
                         <img
                             src={LogoImg}
                             alt="Mind Saarthi"
                             className="h-12 w-auto object-contain transition-transform group-hover:scale-105"
                         />
-                    </Link>
+                    </Link> */}
                 </motion.div>
 
                 {/* Desktop Nav Pill */}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const CTASection = () => {
     return (
@@ -30,14 +31,14 @@ const CTASection = () => {
                     </p>
 
                     <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-                        <button className="group relative w-full sm:w-auto px-10 py-5 bg-primary text-white rounded-full font-bold text-lg shadow-[0_0_40px_-5px_rgba(23,93,197,0.6)] hover:shadow-[0_0_60px_-5px_rgba(23,93,197,0.8)] transition-all duration-300 hover:-translate-y-1 overflow-hidden flex items-center justify-center gap-2">
+                        <Link to="/login" className="group relative w-full sm:w-auto px-10 py-5 bg-primary text-white rounded-full font-bold text-lg shadow-[0_0_40px_-5px_rgba(23,93,197,0.6)] hover:shadow-[0_0_60px_-5px_rgba(23,93,197,0.8)] transition-all duration-300 hover:-translate-y-1 overflow-hidden flex items-center justify-center gap-2">
                             <span className="relative z-10 flex items-center gap-2">
                                 Start Screening Now <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                             </span>
                             {/* Pulse animation ring */}
                             <div className="absolute inset-0 border-[3px] border-white/30 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
                             <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary-light to-accent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        </button>
+                        </Link>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-4 sm:mt-0 sm:ml-4 font-medium">
                             100% Free & Confidential
                         </p>
