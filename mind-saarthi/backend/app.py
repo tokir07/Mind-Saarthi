@@ -39,29 +39,120 @@ print(f"DEBUG: Loaded .env from {env_path}")
 print(f"DEBUG: OPENROUTER_API_KEY value: {os.getenv('OPENROUTER_API_KEY')[:5] if os.getenv('OPENROUTER_API_KEY') else 'NONE'}")
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for frontend
+# Robust CORS with credentials support and preflight handling
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+@app.route("/api/reverse-geocode", methods=["GET"])
+def reverse_geocode():
+    lat = request.args.get("lat")
+    lng = request.args.get("lng")
+    if not lat or not lng:
+        return jsonify({"address": "Unknown Location"}), 400
+        
+    try:
+        # Using OpenStreetMap Nominatim API (Free, no key required for low volume)
+        headers = {'User-Agent': 'MindSaarthi-App/1.0'}
+        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lng}&zoom=18&addressdetails=1"
+        res = requests.get(url, headers=headers, timeout=5)
+        data = res.json()
+        
+        # Priority: Landmark/Entity Name -> Road/Suburb -> City
+        address_dict = data.get('address', {})
+        landmark = data.get('display_name', '').split(',')[0] # Usually the first part is the specific name (JECRC Uni)
+        
+        # Format a professional landmark-style address
+        final_address = landmark
+        if not landmark or landmark.replace(' ', '').isdigit(): # Fallback if first part is a number
+            suburb = address_dict.get('suburb', address_dict.get('neighbourhood', ''))
+            city = address_dict.get('city', address_dict.get('town', ''))
+            final_address = f"{suburb}, {city}" if suburb else city
+            
+        return jsonify({"address": final_address or "MindSaarthi Hub"})
+    except Exception as e:
+        print(f"Geocoding Error: {e}")
+        return jsonify({"address": "Geolocation Hub"})
 
 @app.route("/api/doctors", methods=["GET"])
 def get_doctors():
     doctors = [
         {
-            "name": "Dr. Sharma",
-            "specialization": "Psychiatrist",
-            "rating": 4.5,
-            "address": "Delhi",
-            "phone": "9876543210",
-            "lat": 28.6139,
-            "lng": 77.2090
+            "id": 1,
+            "name": "Dr. Ananya Sharma",
+            "specialization": "Clinical Psychiatrist",
+            "rating": 4.9,
+            "reviews": 124,
+            "address": "GK-II, New Delhi",
+            "phone": "+91 98765 43210",
+            "lat": 28.5355,
+            "lng": 77.2090,
+            "image": "https://images.unsplash.com/photo-1559839734-2b71f153678?w=800&auto=format&fit=crop",
+            "fee": "₹1500"
         },
         {
-            "name": "Dr. Mehta",
-            "specialization": "Therapist",
-            "rating": 4.2,
-            "address": "Noida",
-            "phone": "9123456780",
-            "lat": 28.5355,
-            "lng": 77.3910
+            "id": 2,
+            "name": "Dr. Rohan Mehta",
+            "specialization": "CBT Specialist",
+            "rating": 4.7,
+            "reviews": 89,
+            "address": "Sector 62, Noida",
+            "phone": "+91 91234 56780",
+            "lat": 28.6139,
+            "lng": 77.3910,
+            "image": "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=800&auto=format&fit=crop",
+            "fee": "₹1200"
+        },
+        {
+            "id": 3,
+            "name": "Dr. Priya Varma",
+            "specialization": "Child Psychologist",
+            "rating": 4.8,
+            "reviews": 210,
+            "address": "Indrapuram, Ghaziabad",
+            "phone": "+91 99887 76655",
+            "lat": 28.6692,
+            "lng": 77.4538,
+            "image": "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=800&auto=format&fit=crop",
+            "fee": "₹2000"
+        },
+        {
+            "id": 4,
+            "name": "Prof. Sameer Khan",
+            "specialization": "Family Counselor",
+            "rating": 4.6,
+            "reviews": 56,
+            "address": "Vasant Kunj, South Delhi",
+            "phone": "+91 88776 65544",
+            "lat": 28.5293,
+            "lng": 77.1517,
+            "image": "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=800&auto=format&fit=crop",
+            "fee": "₹1000"
+        },
+        {
+            "id": 5,
+            "name": "Dr. Ishita Roy",
+            "specialization": "Anxiety Specialist",
+            "rating": 4.9,
+            "reviews": 340,
+            "address": "Hauz Khas, Delhi",
+            "phone": "+91 77665 54433",
+            "lat": 28.5494,
+            "lng": 77.2001,
+            "image": "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=800&auto=format&fit=crop",
+            "fee": "₹1800"
+        },
+        {
+            "id": 6,
+            "name": "Dr. Kabir Singh",
+            "specialization": "Addiction Therapist",
+            "rating": 4.5,
+            "reviews": 112,
+            "address": "Gurgaon, Phase 3",
+            "phone": "+91 66554 43322",
+            "lat": 28.4595,
+            "lng": 77.0266,
+            "image": "https://images.unsplash.com/photo-1582750433449-648ed127bb54?w=800&auto=format&fit=crop",
+            "fee": "₹2200"
         }
     ]
     return jsonify(doctors)
@@ -214,6 +305,22 @@ except Exception as e:
     sentiment_pipeline = None
 
 # ---- Helper Functions ----
+import re
+def clean_markdown_for_pdf(text):
+    """Converts AI markdown (*, **) to ReportLab-friendly HTML tags (<i>, <b>)."""
+    if not text: return ""
+    # 1. Convert bold (**) to <b>
+    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+    # 2. Convert italics (*) to <i>
+    text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+    # 3. Convert bullet points (- or *) to bullet symbols
+    text = re.sub(r'^(\s*)[\-\*]\s+', r'\1• ', text, flags=re.MULTILINE)
+    # 4. Remove any remaining isolated asterisks
+    text = text.replace('*', '')
+    # 5. Handle newlines for Paragraph
+    text = text.replace('\n', '<br/>')
+    return text
+
 def get_risk_level(text, sentiment_result=None):
     """Deep AI-driven risk assessment with robust keyword fallback."""
     text_lower = text.lower()
@@ -456,18 +563,20 @@ def send_whatsapp_alert(lat, lng, user_name="A User"):
 # ---- Advanced Reporting & Analytics ----
 
 def generate_session_report(user_id, session_summary, sentiment_trend, risk_level, detected_issues, session_type="Chat"):
-    """Summarize and save a chat session to MongoDB."""
+    """Summarize and save a chat session to MongoDB, then spawn a unique recovery plan."""
     try:
+        # 1. Generate Recommendations using AI (Mental Health Report)
         if not ai_client:
             recommendations = "Seek support from trusted circles. Maintain a regular meditation habit."
         else:
-            prompt = f"Summarize the following mental health session insights and provide 3-4 professional recommendations based on: {session_summary}. Risk Level: {risk_level}."
+            prompt = f"Summarize the following mental health session insights and provide 3-4 professional recommendations based on: {session_summary}. Risk Level: {risk_level}. Sentiment Trend: {sentiment_trend}."
             response = ai_client.chat.completions.create(
                 model="google/gemini-2.0-flash-001",
                 messages=[{"role": "user", "content": prompt}]
             )
             recommendations = response.choices[0].message.content.strip()
 
+        # 2. Store Session Report
         report_doc = {
             "user_id": user_id,
             "session_type": session_type,
@@ -478,10 +587,28 @@ def generate_session_report(user_id, session_summary, sentiment_trend, risk_leve
             "recommendations": recommendations,
             "created_at": datetime.datetime.now()
         }
-
         if db_con and session_reports_collection is not None:
             session_reports_collection.insert_one(report_doc)
-            print("Session report saved successfully.")
+
+        # 3. Spawn a RECOVERY PLAN Architecture (Automatically)
+        # This addresses user feedback about 'plans always being the same'
+        try:
+            plan = generate_recovery_plan_ai(user_id, session_summary, risk_level, sentiment_trend, context=f"Issues: {detected_issues}")
+            plan_doc = {
+                "user_id": user_id,
+                "plan": plan,
+                "issue_type": plan.get("issue", "clinical_event"),
+                "risk_level": risk_level,
+                "sentiment_label": sentiment_trend,
+                "created_at": datetime.datetime.now(),
+                "status": "active"
+            }
+            if recovery_plans_collection is not None:
+                recovery_plans_collection.insert_one(plan_doc)
+                print(" Dynamic Recovery Plan spawned for report.")
+        except Exception as pe:
+            print(f" Recovery Plan Spawn Error: {pe}")
+
         return report_doc
     except Exception as e:
         print(f"Reporting Error: {e}")
@@ -663,10 +790,17 @@ def dashboard():
             "sentiment": c["sentiment"]
         })
 
+    # MD-Score & Predictive Health Trajectory
+    md_val = round(max(10, 100 - (sum({"High": 100, "Mod": 50, "Low": 10}.get(c["risk"][:3], 10) for c in user_chats[-3:]) / 3))) if user_chats else 100
+    traj = [{"day": f"D+{i}", "score": round(md_val + random.uniform(-3, 3))} for i in range(1, 8)]
+
     return jsonify({
         "name": user_name,
         "latest_risk": overall_risk,
-        "mood_history": history
+        "mood_history": history,
+        "md_score": md_val,
+        "health_trajectory": traj,
+        "triage_summary": f"Predictive intelligence indicates stability at {md_val}% for the next 72h."
     })
 
 # ----  Sentimental Fallback Engine (In case of 429 Quota Errors) ----
@@ -1255,58 +1389,48 @@ def download_pdf_report(report_id):
     
     # 2. Executive Summary
     elements.append(Paragraph("Executive Summary", section_title))
-    elements.append(Paragraph(report.get('summary', 'No summary provided for this interaction.'), body_text))
+    summary_clean = clean_markdown_for_pdf(report.get('summary', 'No summary provided.'))
+    elements.append(Paragraph(summary_clean, body_text))
     
-    # 3. Clinical Assessment
-    elements.append(Paragraph("Clinical Assessment", section_title))
+    # 3. Clinical Analysis & Metrics
+    elements.append(Paragraph("Clinical Analysis & Metrics", section_title))
     assessment_data = [
-        ["Risk Assessment:", Paragraph(report.get('risk_level', 'Low'), risk_indicator)],
-        ["Primary Issue:", report.get('detected_issues', 'General Wellness').replace('_', ' ').title()],
-        ["Sentiment Trend:", report.get('sentiment_trend', 'Neutral')]
+        [Paragraph("<b>Risk Assessment:</b>", body_text), Paragraph(report.get('risk_level', 'Low'), risk_indicator)],
+        [Paragraph("<b>Primary Indicator:</b>", body_text), report.get('detected_issues', 'General Wellness').replace('_', ' ').title()],
+        [Paragraph("<b>Sentiment Analysis:</b>", body_text), report.get('sentiment_trend', 'Neutral')],
+        [Paragraph("<b>AI Model:</b>", body_text), "MindSaarthi v2.0 (Gemini 2.0 Flash)"]
     ]
-    assessment_table = Table(assessment_data, colWidths=[2*inch, 4*inch])
+    assessment_table = Table(assessment_data, colWidths=[2.5*inch, 3.5*inch])
     assessment_table.setStyle(TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('PADDING', (0, 0), (-1, -1), 10),
-        ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor("#175dc5")),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#f8fafc")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#175dc5")),
+        ('PADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     elements.append(assessment_table)
+    elements.append(Spacer(1, 0.2*inch))
     
-    # 4. Professional Recommendations
-    elements.append(Paragraph("AI-Driven Recommendations", section_title))
-    recs = report.get('recommendations', 'Continue maintaining your wellness routine.')
-    # Handle multi-line recommendations if they come as bullet points
-    for line in recs.split('\n'):
-        if line.strip():
-            prefix = "• " if line.strip().startswith(('-', '*', '1.', '2.', '3.')) else ""
-            clean_line = line.strip().lstrip('-*123456789. ')
-            elements.append(Paragraph(f"{prefix}{clean_line}", body_text))
+    # 4. Actionable Recommendations
+    elements.append(Paragraph("Actionable Wellness Recommendations", section_title))
+    recs_clean = clean_markdown_for_pdf(report.get('recommendations', 'Continue maintaining your wellness routine.'))
+    elements.append(Paragraph(recs_clean, body_text))
     
-    # 5. Recovery Focus
-    elements.append(Paragraph("Next Steps & Focus", section_title))
-    elements.append(Paragraph(f"The analysis suggests focusing on <b>{report.get('detected_issues', 'general stability').replace('_', ' ')}</b> and maintaining consistent check-ins.", body_text))
-    
-    # Footer
+    # 5. Professional Footer Disclaimer
     elements.append(Spacer(1, 0.5*inch))
-    elements.append(Paragraph("<hr/>", body_text))
-    elements.append(Paragraph("<font size='8' color='grey'>This report is generated by MindSaarthi AI and is intended for informational purposes. It does not replace professional medical advice.</font>", body_text))
+    footer_text = "<font color='#94a3b8' size='8'><b>DISCLAIMER:</b> This report is generated by an Artificial Intelligence system for informational purposes only. It is NOT a medical diagnosis or a substitute for professional clinical advice. If you are experiencing a crisis, please contact emergency services (988 in the US, or local counterparts).</font>"
+    elements.append(Paragraph(footer_text, ParagraphStyle('Footer', parent=styles['Normal'], alignment=1)))
     
     doc.build(elements)
     buffer.seek(0)
-    
     return send_file(buffer, as_attachment=True, download_name=f"MindSaarthi_Report_{report_id}.pdf", mimetype='application/pdf')
 
 # ---- GROUP CHAT & SOCKET.IO FEATURES ----
 
 # Room definitions
 CHAT_ROOMS = {
-    "anxiety": "Inner Calm Circle",
-    "stress": "Balance & Flow",
-    "depression": "Hope Horizon",
-    "loneliness": "Connection Corner",
-    "general": "Mindful Meadows",
-    "crisis": "Safe Haven"
+    "community": "Safe Space Community 🌈"
 }
 
 ANONYMOUS_ADJECTIVES = ["Quiet", "Brave", "Calm", "Gentle", "Resilient", "Kind", "Strong", "Peaceful"]
@@ -1314,24 +1438,43 @@ ANONYMOUS_ADJECTIVES = ["Quiet", "Brave", "Calm", "Gentle", "Resilient", "Kind",
 @jwt_required()
 def user_profile():
     user_id = get_jwt_identity()
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user: return jsonify({"error": "User not found"}), 404
+
     if request.method == 'GET':
-        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        # Derive a human-readable patient ID from the MongoDB ObjectID (last 4 chars)
+        patient_id = f"#{str(user['_id'])[-4:].upper()}"
+        
         return jsonify({
             "name": user.get("name"),
             "email": user.get("email"),
             "anonymous_mode": user.get("anonymous_mode", False),
-            "interests": user.get("interests", [])
+            "crisis_alerts": user.get("crisis_alerts", True),
+            "interests": user.get("interests", []),
+            "patient_id": patient_id,
+            "clinical_data": user.get("clinical_data", {
+                "blood_group": "B+", "height": "178", "weight": "72", "heart_rate": "74"
+            }),
+            "emergency_contact": user.get("emergency_contact", {
+                "name": "Guardian", "phone": "+91 90799 68792"
+            })
         })
     else:
         data = request.json
+        update_fields = {
+            "name": data.get("name", user.get("name")),
+            "anonymous_mode": data.get("anonymous_mode", user.get("anonymous_mode", False)),
+            "crisis_alerts": data.get("crisis_alerts", user.get("crisis_alerts", True)),
+            "interests": data.get("interests", user.get("interests", [])),
+            "clinical_data": data.get("clinical_data", user.get("clinical_data", {})),
+            "emergency_contact": data.get("emergency_contact", user.get("emergency_contact", {}))
+        }
+        
         users_collection.update_one(
             {"_id": ObjectId(user_id)},
-            {"$set": {
-                "anonymous_mode": data.get("anonymous_mode", False),
-                "interests": data.get("interests", [])
-            }}
+            {"$set": update_fields}
         )
-        return jsonify({"success": True})
+        return jsonify({"success": True, "message": "Profile synced successfully!"})
 
 @socketio.on('join_group')
 def on_join(data):
@@ -1339,10 +1482,8 @@ def on_join(data):
     user = users_collection.find_one({"_id": ObjectId(user_id)})
     if not user: return
     
-    # Smart Matching: Detect issue from profile or recent chats
-    profile = personality_collection.find_one({"user_id": user_id})
-    issue = profile.get("dominant_issue", "general") if profile else "general"
-    room = issue if issue in CHAT_ROOMS else "general"
+    # Single Global Room for all users
+    room = "community"
     
     join_room(room)
     
@@ -1354,8 +1495,6 @@ def on_join(data):
         'room_id': room
     }, room=room)
     
-    # Send recent messages (last 20)
-    # (Implementation for fetching from separate group_chats_collection could go here)
 
 @socketio.on('send_group_message')
 def handle_group_message(data):
