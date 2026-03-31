@@ -3,15 +3,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../AuthContext';
 import { useTheme } from '../ThemeContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { 
-  Users, Send, ChevronLeft, AlertTriangle, Mic, MicOff, 
-  Heart, Stars, Shield, LayoutDashboard, MessageCircle,
-  MoreHorizontal, Sparkles, Smile, Filter, Activity
+import {
+    Users, Send, ChevronLeft, AlertTriangle, Mic, MicOff,
+    Heart, Stars, Shield, LayoutDashboard, MessageCircle,
+    MoreHorizontal, Sparkles, Smile, Filter, Activity
 } from 'lucide-react';
 import io from 'socket.io-client';
 import ThemeToggle from '../components/common/ThemeToggle';
 
-const socket = io('http://localhost:5000');
+// src/pages/GroupChatPage.jsx
+const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+    transports: ['websocket', 'polling'],
+    withCredentials: true
+});
+
 
 const stickers = [
     { id: 's1', emoji: '🐼', label: 'Peaceful Panda', color: 'bg-slate-100' },
@@ -33,20 +38,21 @@ const GroupChatPage = () => {
     const [roomInfo, setRoomInfo] = useState({ name: 'Matching...', id: '' });
     const [anonymous, setAnonymous] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [mediaRecorder, setMediaRecorder] = useState(null);
     const [showStickers, setShowStickers] = useState(false);
     const [groupStats, setGroupStats] = useState({ mood: 72, stress: 30 });
     const scrollRef = useRef(null);
 
     useEffect(() => {
         if (!token) navigate('/login');
-        
+
         // Fetch user profile for anonymous status
         fetch('http://localhost:5000/user/profile', {
             headers: { 'Authorization': `Bearer ${token}` }
         })
-        .then(res => res.json())
-        .then(data => setAnonymous(data.anonymous_mode))
-        .catch(err => console.error(err));
+            .then(res => res.json())
+            .then(data => setAnonymous(data.anonymous_mode))
+            .catch(err => console.error(err));
 
         // Join group
         socket.emit('join_group', { user_id: user?.id });
@@ -65,19 +71,19 @@ const GroupChatPage = () => {
         });
 
         socket.on('crisis_alert', (data) => {
-            setMessages(prev => [...prev, { 
-                id: 'crisis-' + Date.now(), 
-                type: 'alert', 
+            setMessages(prev => [...prev, {
+                id: 'crisis-' + Date.now(),
+                type: 'alert',
                 text: data.msg,
-                helpline: data.helpline 
+                helpline: data.helpline
             }]);
         });
 
         socket.on('new_reaction', (data) => {
-            setMessages(prev => prev.map(m => 
-                m.id === data.msg_id 
-                ? { ...m, reactions: { ...(m.reactions || {}), [data.type]: (m.reactions?.[data.type] || 0) + 1 } }
-                : m
+            setMessages(prev => prev.map(m =>
+                m.id === data.msg_id
+                    ? { ...m, reactions: { ...(m.reactions || {}), [data.type]: (m.reactions?.[data.type] || 0) + 1 } }
+                    : m
             ));
         });
 
@@ -127,12 +133,47 @@ const GroupChatPage = () => {
         });
     };
 
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            setMediaRecorder(recorder);
+            
+            recorder.ondataavailable = (e) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(e.data);
+                reader.onloadend = () => {
+                    const base64data = reader.result.split(',')[1];
+                    socket.emit('voice_chunk', {
+                        room: roomInfo.id,
+                        user_id: user?.id,
+                        audio: base64data
+                    });
+                };
+            };
+            
+            recorder.start(500); // 500ms chunks
+            setIsRecording(true);
+        } catch (err) {
+            console.error("Camera/Mic access denied", err);
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            setMediaRecorder(null);
+        }
+        setIsRecording(false);
+    };
+
     const toggleAnonymous = async () => {
         const newVal = !anonymous;
         setAnonymous(newVal);
         await fetch('http://localhost:5000/user/profile', {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             },
@@ -154,8 +195,8 @@ const GroupChatPage = () => {
         if (msg.type === 'alert') {
             return (
                 <div key={msg.id} className="flex justify-center my-6">
-                    <motion.div 
-                        initial={{ scale: 0.9, opacity: 0 }} 
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         className="bg-accent/10 border-2 border-accent/20 rounded-3xl p-6 max-w-md text-center shadow-xl shadow-accent/5 backdrop-blur-sm"
                     >
@@ -178,13 +219,12 @@ const GroupChatPage = () => {
         return (
             <div key={msg.id} className={`flex flex-col mb-6 ${isMe ? 'items-end' : 'items-start'}`}>
                 <div className={`flex items-end gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
-                        isBot ? 'bg-primary text-white' : 
-                        isMe ? 'bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${isBot ? 'bg-primary text-white' :
+                            isMe ? 'bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}>
                         {isBot ? <Sparkles size={18} /> : msg.user[0].toUpperCase()}
                     </div>
-                    
+
                     <div className="flex flex-col gap-1.5">
                         {!isMe && (
                             <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 ml-1 uppercase tracking-wider flex items-center gap-1.5">
@@ -193,13 +233,12 @@ const GroupChatPage = () => {
                                 {msg.risk === 'High' && <Shield size={10} className="text-accent" />}
                             </span>
                         )}
-                        
-                        <div className={`p-4 rounded-3xl text-[14px] leading-relaxed shadow-sm ${
-                            msg.is_sticker ? 'bg-transparent border-none shadow-none p-0' :
-                            isMe ? 'bg-primary text-white rounded-tr-none' : 
-                            isBot ? 'bg-white dark:bg-slate-900 border-2 border-primary/20 text-slate-800 dark:text-slate-100 rounded-tl-none' : 
-                            'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-tl-none border border-slate-100 dark:border-slate-800'
-                        }`}>
+
+                        <div className={`p-4 rounded-3xl text-[14px] leading-relaxed shadow-sm ${msg.is_sticker ? 'bg-transparent border-none shadow-none p-0' :
+                                isMe ? 'bg-primary text-white rounded-tr-none' :
+                                    isBot ? 'bg-white dark:bg-slate-900 border-2 border-primary/20 text-slate-800 dark:text-slate-100 rounded-tl-none' :
+                                        'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-tl-none border border-slate-100 dark:border-slate-800'
+                            }`}>
                             {msg.is_sticker ? (
                                 <div className="relative group/sticker">
                                     <div className="absolute -inset-2 bg-white/20 dark:bg-white/10 rounded-full blur-xl scale-0 group-hover/sticker:scale-110 transition-transform"></div>
@@ -218,14 +257,13 @@ const GroupChatPage = () => {
                         {/* Reactions Bar */}
                         <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                             {['support', 'hug', 'relate'].map(type => (
-                                <button 
+                                <button
                                     key={type}
                                     onClick={() => handleReaction(msg.id, type)}
-                                    className={`px-2 py-1 rounded-full text-[10px] flex items-center gap-1 transition-all ${
-                                        msg.reactions?.[type] 
-                                        ? 'bg-primary/20 text-primary border border-primary/20' 
-                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                    }`}
+                                    className={`px-2 py-1 rounded-full text-[10px] flex items-center gap-1 transition-all ${msg.reactions?.[type]
+                                            ? 'bg-primary/20 text-primary border border-primary/20'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                        }`}
                                 >
                                     {type === 'support' && <Heart size={10} />}
                                     {type === 'hug' && <Smile size={10} />}
@@ -268,7 +306,7 @@ const GroupChatPage = () => {
                                         <Activity size={12} className="text-emerald-500" />
                                     </div>
                                     <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                        <motion.div 
+                                        <motion.div
                                             initial={{ width: 0 }}
                                             animate={{ width: `${groupStats.mood}%` }}
                                             className="h-full bg-emerald-500"
@@ -283,7 +321,7 @@ const GroupChatPage = () => {
                                         <Filter size={12} className="text-primary" />
                                     </div>
                                     <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                        <motion.div 
+                                        <motion.div
                                             initial={{ width: 0 }}
                                             animate={{ width: `${groupStats.stress}%` }}
                                             className="h-full bg-primary"
@@ -296,20 +334,19 @@ const GroupChatPage = () => {
 
                         <div>
                             <h3 className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.2em] mb-4">Settings</h3>
-                            <button 
+                            <button
                                 onClick={toggleAnonymous}
-                                className={`w-full p-4 rounded-3xl border-2 transition-all flex items-center justify-between group ${
-                                    anonymous 
-                                    ? 'bg-primary/10 border-primary/20 text-primary' 
-                                    : 'bg-white/50 dark:bg-slate-800/50 border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400'
-                                }`}
+                                className={`w-full p-4 rounded-3xl border-2 transition-all flex items-center justify-between group ${anonymous
+                                        ? 'bg-primary/10 border-primary/20 text-primary'
+                                        : 'bg-white/50 dark:bg-slate-800/50 border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400'
+                                    }`}
                             >
                                 <div className="flex items-center gap-3">
                                     <Shield size={18} className={anonymous ? 'text-primary' : 'text-slate-400'} />
                                     <span className="text-xs font-bold font-mono">ANONYMOUS</span>
                                 </div>
                                 <div className={`w-8 h-4 rounded-full relative transition-colors ${anonymous ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}>
-                                    <motion.div 
+                                    <motion.div
                                         animate={{ x: anonymous ? 16 : 0 }}
                                         className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
                                     />
@@ -346,7 +383,7 @@ const GroupChatPage = () => {
 
                     <div className="flex items-center gap-3">
                         <div className="hidden sm:flex -space-x-2">
-                            {[1,2,3].map(i => (
+                            {[1, 2, 3].map(i => (
                                 <div key={i} className="w-8 h-8 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400">
                                     {String.fromCharCode(64 + i)}
                                 </div>
@@ -364,7 +401,7 @@ const GroupChatPage = () => {
                 </header>
 
                 {/* Messages Feed */}
-                <div 
+                <div
                     ref={scrollRef}
                     className="flex-1 overflow-y-auto p-8 custom-scrollbar relative"
                 >
@@ -376,7 +413,7 @@ const GroupChatPage = () => {
                             <h3 className="text-2xl font-black mb-2 tracking-tight">Welcome to the Circle</h3>
                             <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">This is a zero-judgment zone. Your identity is protected, and your feelings are valid.</p>
                         </div>
-                        
+
                         {messages.map(renderMessage)}
                     </div>
                 </div>
@@ -387,20 +424,20 @@ const GroupChatPage = () => {
                         <form onSubmit={handleSend} className="relative group">
                             <div className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border-2 border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] p-3 shadow-2xl shadow-primary/5 focus-within:border-primary/30 transition-all duration-500">
                                 <div className="flex items-center gap-3">
-                                    <button 
+                                    <button
                                         type="button"
-                                        onMouseDown={() => setIsRecording(true)}
-                                        onMouseUp={() => setIsRecording(false)}
-                                        className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 transition-all ${
-                                            isRecording 
-                                            ? 'bg-accent text-white shadow-lg shadow-accent/40 animate-pulse scale-110' 
-                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
-                                        }`}
+                                        onMouseDown={startRecording}
+                                        onMouseUp={stopRecording}
+                                        onMouseLeave={stopRecording}
+                                        className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 transition-all ${isRecording
+                                                ? 'bg-accent text-white shadow-lg shadow-accent/40 animate-pulse scale-110'
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+                                            }`}
                                     >
                                         {isRecording ? <Mic size={24} /> : <MicOff size={24} />}
                                     </button>
-                                    
-                                    <input 
+
+                                    <input
                                         type="text"
                                         value={inputValue}
                                         onChange={(e) => setInputValue(e.target.value)}
@@ -410,8 +447,8 @@ const GroupChatPage = () => {
 
                                     <div className="flex items-center gap-2 pr-2">
                                         <div className="relative">
-                                            <button 
-                                                type="button" 
+                                            <button
+                                                type="button"
                                                 onClick={() => setShowStickers(!showStickers)}
                                                 className={`p-3 rounded-2xl transition-all ${showStickers ? 'bg-primary/20 text-primary' : 'text-slate-400 hover:text-primary hover:bg-primary/5'}`}
                                             >
@@ -420,7 +457,7 @@ const GroupChatPage = () => {
 
                                             <AnimatePresence>
                                                 {showStickers && (
-                                                    <motion.div 
+                                                    <motion.div
                                                         initial={{ opacity: 0, y: 20, scale: 0.9 }}
                                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                                         exit={{ opacity: 0, y: 20, scale: 0.9 }}
@@ -441,7 +478,7 @@ const GroupChatPage = () => {
                                                 )}
                                             </AnimatePresence>
                                         </div>
-                                        <motion.button 
+                                        <motion.button
                                             type="submit"
                                             disabled={!inputValue.trim()}
                                             whileHover={inputValue.trim() ? { scale: 1.05 } : {}}
@@ -453,11 +490,11 @@ const GroupChatPage = () => {
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {/* Push to Talk Hint */}
                             <AnimatePresence>
                                 {isRecording && (
-                                    <motion.div 
+                                    <motion.div
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: 10 }}
