@@ -26,6 +26,7 @@ const DashboardPage = () => {
     const navigate = useNavigate();
     
     // Core Dashboard State
+    const [doctors, setDoctors] = useState([]);
     const [stats, setStats] = useState(null);
     const [reports, setReports] = useState([]);
     const [plans, setPlans] = useState([]);
@@ -77,6 +78,20 @@ const DashboardPage = () => {
 
         fetchData();
     }, [token, navigate]);
+
+    const fetchNearbyDoctors = async () => {
+    try {
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+
+            const res = await api.get(`/nearby-doctors?lat=${lat}&lng=${lng}`);
+            setDoctors(res.data);
+        });
+    } catch (err) {
+        console.error(err);
+    }
+};
 
     const handleLogout = () => { logout(); navigate('/'); };
 
@@ -146,6 +161,7 @@ const DashboardPage = () => {
         { id: 'reports', label: 'Session Reports', icon: FileTextIcon },
         { id: 'plans', label: 'Recovery Plans', icon: Brain },
         { id: 'risk', label: 'Risk History', icon: ShieldAlert },
+        { id: 'doctors', label: 'Doctors', icon: MapPin },
         { id: 'profile', label: 'Profile Settings', icon: User },
     ];
 
@@ -465,6 +481,62 @@ const DashboardPage = () => {
                                 </div>
                             </motion.div>
                         )}
+
+                        {activeTab === 'doctors' && (
+                            <motion.div
+                                key="doctors"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                className="space-y-6"
+                            >
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-3xl font-black">Nearby Doctors</h2>
+
+                                    <button
+                                        onClick={() => fetchNearbyDoctors()}
+                                        className="px-5 py-3 bg-primary text-white rounded-xl font-bold"
+                                    >
+                                        Use My Location
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {doctors.map((doc, i) => (
+                                        <PremiumCard key={i} className="p-6 space-y-4">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h3 className="text-xl font-bold">{doc.name}</h3>
+                                                    <p className="text-sm opacity-60">{doc.specialization}</p>
+                                                </div>
+                                                <span className="text-yellow-500 font-bold">⭐ {doc.rating}</span>
+                                            </div>
+
+                                            <div className="text-sm opacity-70 flex items-center gap-2">
+                                                <MapPin size={16} /> {doc.address}
+                                            </div>
+
+                                            <div className="flex gap-3 mt-4">
+                                                <a
+                                                    href={`tel:${doc.phone}`}
+                                                    className="flex-1 text-center py-2 bg-emerald-500 text-white rounded-lg font-bold"
+                                                >
+                                                    Call
+                                                </a>
+
+                                                <a
+                                                    href={`https://www.google.com/maps/search/?api=1&query=${doc.lat},${doc.lng}`}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="flex-1 text-center py-2 bg-blue-500 text-white rounded-lg font-bold"
+                                                >
+                                                    Map
+                                                </a>
+                                            </div>
+                                        </PremiumCard>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        )}                       
 
                         {activeTab === 'reports' && (
                             <motion.div

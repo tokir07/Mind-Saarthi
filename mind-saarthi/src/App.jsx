@@ -10,6 +10,7 @@ import ChatPage from './pages/ChatPage';
 import GroupChatPage from './pages/GroupChatPage';
 import VoiceCallPage from './pages/VoiceCallPage';
 import { AnimatePresence } from 'framer-motion';
+import DoctorsPage from "./pages/DoctorsPage";
 
 function AppRoutes() {
   return (
@@ -21,6 +22,7 @@ function AppRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/group-chat" element={<GroupChatPage />} />
+        <Route path="/doctors" element={<DoctorsPage />} />
         <Route path="/call" element={<VoiceCallPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

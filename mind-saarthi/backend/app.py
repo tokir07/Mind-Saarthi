@@ -29,6 +29,9 @@ from gtts import gTTS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import random
 
+
+
+
 # Force load .env from the current script directory
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path=env_path)
@@ -38,6 +41,56 @@ print(f"DEBUG: OPENROUTER_API_KEY value: {os.getenv('OPENROUTER_API_KEY')[:5] if
 app = Flask(__name__)
 CORS(app) # Enable CORS for frontend
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+@app.route("/api/doctors", methods=["GET"])
+def get_doctors():
+    doctors = [
+        {
+            "name": "Dr. Sharma",
+            "specialization": "Psychiatrist",
+            "rating": 4.5,
+            "address": "Delhi",
+            "phone": "9876543210",
+            "lat": 28.6139,
+            "lng": 77.2090
+        },
+        {
+            "name": "Dr. Mehta",
+            "specialization": "Therapist",
+            "rating": 4.2,
+            "address": "Noida",
+            "phone": "9123456780",
+            "lat": 28.5355,
+            "lng": 77.3910
+        }
+    ]
+    return jsonify(doctors)
+
+
+# ✅ 👉 PASTE THIS RIGHT HERE (below the above function)
+
+@app.route("/nearby-doctors", methods=["GET"])
+def nearby_doctors():
+    lat = request.args.get("lat")
+    lng = request.args.get("lng")
+
+    if not lat or not lng:
+        return jsonify({"error": "Latitude and Longitude required"}), 400
+
+    try:
+        doctors = get_nearby_doctors(lat, lng)
+        return jsonify(doctors)
+    except Exception as e:
+        print("Nearby doctors error:", e)
+        return jsonify([
+            {
+                "name": "Emergency Health Center",
+                "address": "Call 112 immediately",
+                "lat": lat,
+                "lng": lng
+            }
+        ])
+
 
 SOOTHING_NAMES = [
     "Quiet Lotus", "Brave Willow", "Zen Panda", "Mindful Breeze",
