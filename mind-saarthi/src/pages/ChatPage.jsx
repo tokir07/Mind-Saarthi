@@ -15,6 +15,10 @@ import RecoveryPlan from '../components/RecoveryPlan';
 import ChatSidebar from '../components/ChatSidebar';
 import ChatMessages from '../components/ChatMessages';
 import ThemeToggle from '../components/common/ThemeToggle';
+import LiveExercisePanel from '../components/LiveExercisePanel';
+import FaceAnalysis from '../components/FaceAnalysis';
+import { Camera as CameraIcon } from 'lucide-react';
+
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const recognition = SpeechRecognition ? new SpeechRecognition() : null;
@@ -46,6 +50,11 @@ const ChatPage = () => {
     // Voice Features State
     const [isListening, setIsListening] = useState(false);
     const [voiceEnabled, setVoiceEnabled] = useState(false); 
+    // Exercise State
+    const [activeExercise, setActiveExercise] = useState(null);
+    
+    // Face Analysis State
+    const [showFaceAnalysis, setShowFaceAnalysis] = useState(false);
 
     const scrollRef = useRef(null);
     const textareaRef = useRef(null);
@@ -65,9 +74,11 @@ const ChatPage = () => {
 
     useEffect(() => {
         if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+            setTimeout(() => {
+                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+            }, 100);
         }
-    }, [messages, isTyping]);
+    }, [messages, isTyping, activeExercise, showFaceAnalysis]);
 
     // Setup Speech Recognition
     useEffect(() => {
@@ -173,6 +184,18 @@ const ChatPage = () => {
             };
             setMessages(prev => [...prev, botMsg]);
             if (resp.data.ask_consent) setShowConsent(true);
+            
+            console.log("Chat Response Object:", resp.data);
+            
+            // Handle Guided Exercise Trigger
+            if (resp.data.exercise) {
+                console.log("Guided Exercise Triggered!", resp.data.exercise);
+                // Wait briefly before starting the exercise
+                setTimeout(() => {
+                    setActiveExercise(resp.data.exercise);
+                }, 1000);
+            }
+            
             speakText(resp.data.reply);
         } catch (error) {
             setMessages(prev => [...prev, { id:Date.now(), type:'bot', text:"Trouble connecting. I'm here though.", timestamp: new Date().toLocaleTimeString() }]);
@@ -227,6 +250,15 @@ const ChatPage = () => {
                         >
                             {voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
                         </motion.button>
+                        <motion.button 
+                            whileHover={{scale:1.05}} 
+                            whileTap={{scale:0.95}} 
+                            onClick={() => setShowFaceAnalysis(true)} 
+                            className="p-2 h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-primary dark:hover:text-primary-light transition-all"
+                            title="Neural Face Scan"
+                        >
+                            <CameraIcon size={18} />
+                        </motion.button>
                         <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block"></div>
                         <motion.button whileHover={{scale:1.05}} whileTap={{scale:0.95}} className="p-2 h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hidden sm:flex">
                            <MoreHorizontal size={18} />
@@ -235,7 +267,43 @@ const ChatPage = () => {
                 </header>
 
                 {/* Messages Feed */}
-                <ChatMessages messages={messages} isTyping={isTyping} scrollRef={scrollRef} />
+                <div className="flex-1 overflow-hidden relative flex flex-col">
+                    <ChatMessages 
+                        messages={messages} 
+                        isTyping={isTyping} 
+                        scrollRef={scrollRef} 
+                        hasActivity={!!activeExercise || !!showFaceAnalysis}
+                    />
+                    
+                    {/* Live Exercise Overlay */}
+                    <AnimatePresence>
+                        {activeExercise && (
+                            <div className="absolute inset-x-0 bottom-0 z-30 px-6 pb-2">
+                                <LiveExercisePanel 
+                                    exercise={activeExercise} 
+                                    onComplete={async () => {
+                                        try {
+                                            await axios.post('http://localhost:5000/record-exercise', {
+                                                exercise_type: activeExercise.type,
+                                                completed: true
+                                            }, { headers: { Authorization: `Bearer ${token}` } });
+                                            
+                                            // Add bot message about completion
+                                            setMessages(prev => [...prev, {
+                                                id: Date.now(),
+                                                type: 'bot',
+                                                text: "Excellent work! Completing that exercise is a great step. Do you feel a bit more centered now?",
+                                                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                            }]);
+                                        } catch (err) { console.error("Error recording exercise:", err); }
+                                        setActiveExercise(null);
+                                    }}
+                                    onCancel={() => setActiveExercise(null)}
+                                />
+                            </div>
+                        )}
+                    </AnimatePresence>
+                </div>
 
                 {/* Input Section */}
                 <div className="p-6 bg-gradient-to-t from-background-light dark:from-background-dark via-background-light dark:via-background-dark to-transparent relative z-20">
@@ -351,6 +419,26 @@ const ChatPage = () => {
                 )}
             </AnimatePresence>
             
+            <AnimatePresence>
+                {showFaceAnalysis && (
+                    <FaceAnalysis 
+                        onComplete={(report) => {
+                            if (report) {
+                                setMessages(prev => [...prev, {
+                                    id: Date.now(),
+                                    type: 'bot',
+                                    text: `Neural Scan Complete: You're showing signs of being ${report.emotion}. ${report.insight}`,
+                                    suggestion: report.suggestions[0],
+                                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                }]);
+                            }
+                            setShowFaceAnalysis(false);
+                        }} 
+                        onCancel={() => setShowFaceAnalysis(false)} 
+                    />
+                )}
+            </AnimatePresence>
+
             {/* Background Blobs (Low Opacity) */}
             <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden opacity-30 dark:opacity-20">
                 <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] animate-blob"></div>

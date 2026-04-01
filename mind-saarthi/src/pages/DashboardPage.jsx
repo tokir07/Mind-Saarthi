@@ -129,19 +129,40 @@ const DashboardPage = () => {
 
         const fetchData = async () => {
             try {
-                const [sRes, rRes, pRes, riskRes, progRes, analyticsRes, insightsRes, scoreRes, profileRes] = await Promise.all([
+                // 1. Fetch CRITICAL data first for fast UI render
+                const [sRes, profileRes] = await Promise.all([
                     api.get('/dashboard'),
+                    api.get('/user/profile')
+                ]);
+
+                setStats(sRes.data);
+                if (sRes.data.md_score) setMdScore(sRes.data.md_score);
+                if (sRes.data.health_trajectory) setHealthTrajectory(sRes.data.health_trajectory);
+                if (sRes.data.triage_summary) setTriageSummary(sRes.data.triage_summary);
+
+                if (profileRes.data) {
+                    if (profileRes.data.clinical_data) setClinicalData(profileRes.data.clinical_data);
+                    if (profileRes.data.emergency_contact) setEmergencyContact(profileRes.data.emergency_contact);
+                    if (profileRes.data.patient_id) setPatientId(profileRes.data.patient_id);
+                    setAnonymousMode(profileRes.data.anonymous_mode || false);
+                    setCrisisAlerts(profileRes.data.crisis_alerts !== false);
+                    setEditName(profileRes.data.name || sRes.data.name || "");
+                }
+
+                // Show the UI as soon as core stats are in
+                setLoading(false);
+
+                // 2. Load SECONDARY data in the background (Non-blocking)
+                const [rRes, pRes, riskRes, progRes, analyticsRes, insightsRes, scoreRes] = await Promise.all([
                     api.get('/reports'),
                     api.get('/plans'),
                     api.get('/risk-history'),
                     api.get('/daily-progress'),
                     api.get('/analytics'),
                     api.get('/user-insights'),
-                    api.get('/weekly-score'),
-                    api.get('/user/profile')
+                    api.get('/weekly-score')
                 ]);
 
-                setStats(sRes.data);
                 setReports(rRes.data);
                 setPlans(pRes.data);
                 setRisks(riskRes.data);
@@ -150,22 +171,8 @@ const DashboardPage = () => {
                 setUserInsights(insightsRes.data);
                 setWeeklyScore(scoreRes.data);
 
-                if (profileRes.data) {
-                    if (profileRes.data.clinical_data) setClinicalData(profileRes.data.clinical_data);
-                    if (profileRes.data.emergency_contact) setEmergencyContact(profileRes.data.emergency_contact);
-                    if (profileRes.data.patient_id) setPatientId(profileRes.data.patient_id);
-                    setAnonymousMode(profileRes.data.anonymous_mode || false);
-                    setCrisisAlerts(profileRes.data.crisis_alerts !== false); // True by default
-                    setEditName(profileRes.data.name || sRes.data.name || "");
-                }
-
-                // AI Triage & Predictive Trajectory
-                if (sRes.data.md_score) setMdScore(sRes.data.md_score);
-                if (sRes.data.health_trajectory) setHealthTrajectory(sRes.data.health_trajectory);
-                if (sRes.data.triage_summary) setTriageSummary(sRes.data.triage_summary);
             } catch (err) {
                 console.error("Data fetch error:", err);
-            } finally {
                 setLoading(false);
             }
         };

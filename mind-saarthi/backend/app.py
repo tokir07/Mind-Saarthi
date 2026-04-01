@@ -379,19 +379,19 @@ def get_risk_level(text, sentiment_result=None):
 def detect_issue(user_message):
     """Classify user's main struggle for targeted recovery planning."""
     msg = user_message.lower()
-    if any(k in msg for k in ["kill", "die", "end it", "suicide", "harm"]):
+    if any(k in msg for k in ["kill", "die", "end it", "suicide", "harm", "hurt myself"]):
         return "crisis"
-    if any(k in msg for k in ["sleep", "insomnia", "nightmare", "waking up"]):
+    if any(k in msg for k in ["sleep", "insomnia", "nightmare", "waking up", "can't sleep"]):
         return "sleep_issue"
-    elif any(k in msg for k in ["stress", "pressure", "workload", "exams"]):
+    elif any(k in msg for k in ["stress", "pressure", "workload", "exams", "overwhelmed", "deadline"]):
         return "stress"
-    elif any(k in msg for k in ["overthinking", "logic", "thoughts", "can't stop", "what if"]):
+    elif any(k in msg for k in ["overthinking", "logic", "thoughts", "can't stop", "what if", "mind racing"]):
         return "overthinking"
-    elif any(k in msg for k in ["tired", "burnout", "exhausted", "no energy", "drained"]):
+    elif any(k in msg for k in ["tired", "burnout", "exhausted", "no energy", "drained", "burnt out", "fatigue"]):
         return "burnout"
-    elif any(k in msg for k in ["alone", "lonely", "no one", "isolated"]):
+    elif any(k in msg for k in ["alone", "lonely", "no one", "isolated", "single"]):
         return "loneliness"
-    elif any(k in msg for k in ["anxious", "panic", "fear", "scared"]):
+    elif any(k in msg for k in ["anxious", "panic", "fear", "scared", "shaking", "nervous"]):
         return "anxiety"
     return "general"
 
@@ -500,44 +500,68 @@ def generate_recovery_plan_ai(user_id, user_message, risk_level, sentiment, cont
         }
 
 def get_nearby_doctors(lat, lng):
-    """Fetch nearest hospitals using OpenStreetMap's Overpass API (Free/No Key)."""
-    try:
-        # Overpass QL query: find hospitals within 5km of lat/lng
-        radius = 5000
-        overpass_url = "https://overpass-api.de/api/interpreter"
-        overpass_query = f"""
-        [out:json];
-        node["amenity"~"hospital|clinic|doctors"](around:{radius},{lat},{lng});
-        out body;
-        """
-        
-        response = requests.post(overpass_url, data={'data': overpass_query}, timeout=10)
-        if response.status_code != 200:
-            raise Exception(f"Overpass Server Error {response.status_code}")
+    """Fetch nearest hospitals using robust Overpass mirrors and broader radius."""
+    # Mirror servers for redundancy
+    overpass_mirrors = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter", # High performance mirror
+        "https://lz4.overpass-api.de/api/interpreter"
+    ]
+    
+    radius = 15000 # Increased to 15km for better rural coverage
+    
+    # query nwr (node, way, relation) to catch polygon hospitals
+    query = f"""
+    [out:json][timeout:25];
+    (
+      nwr["amenity"~"hospital|clinic|doctors"](around:{radius},{lat},{lng});
+      nwr["healthcare"~"hospital|psychiatrist|psychotherapy"](around:{radius},{lat},{lng});
+    );
+    out center body 4;
+    """
+
+    for mirror in overpass_mirrors:
+        try:
+            print(f"DEBUG: Attempting hospital fetch from {mirror}...")
+            response = requests.post(mirror, data={'data': query}, timeout=8)
+            if response.status_code != 200: continue
+                
+            data = response.json()
+            elements = data.get("elements", [])
             
-        data = response.json()
-        
-        results = []
-        for element in data.get("elements", [])[:3]:
-            tags = element.get("tags", {})
-            name = tags.get("name") or tags.get("name:en") or "Medical Center"
-            addr = tags.get("addr:full") or tags.get("addr:street") or "Nearby Location"
+            if not elements: continue
+                
+            results = []
+            for el in elements:
+                tags = el.get("tags", {})
+                name = tags.get("name") or tags.get("name:en") or "Medical Center"
+                addr = tags.get("addr:street") or tags.get("addr:full") or "Nearby Location"
+                
+                # Fetch lat/lng from node directly or centroid (center) for ways/relations
+                e_lat = el.get("lat") or el.get("center", {}).get("lat")
+                e_lng = el.get("lon") or el.get("center", {}).get("lon")
+                
+                if e_lat and e_lng:
+                    results.append({
+                        "name": name,
+                        "address": addr,
+                        "lat": e_lat,
+                        "lng": e_lng,
+                        "type": el.get("type", "node")
+                    })
             
-            results.append({
-                "name": name,
-                "address": addr,
-                "lat": element.get("lat"),
-                "lng": element.get("lon")
-            })
+            if results: return results[:4]
             
-        if not results:
-            return [{"name": "Local Support Center", "address": "Call Emergency Services (112)", "lat": lat, "lng": lng}]
-            
-        return results
-    except Exception as e:
-        print(f"OSM/Overpass API Error: {e}")
-        # Robust fallback
-        return [{"name": "Emergency Health Center", "address": "Please contact 112 immediately.", "lat": lat, "lng": lng}]
+        except Exception as e:
+            print(f"OSM Mirror Error ({mirror}): {e}")
+            continue
+
+    # Final Fallback if all mirrors fail
+    print("WARNING: All Overpass mirrors failed. Returning fallback clinical centers.")
+    return [
+        {"name": "MindSaarthi Primary Support", "address": "Call 112 (Emergency)", "lat": lat, "lng": lng},
+        {"name": "Health Helpline India", "address": "91-11-23978046", "lat": lat, "lng": lng}
+    ]
 
 def send_whatsapp_alert(lat, lng, user_name="A User"):
     """Trigger Twilio WhatsApp emergency alert."""
@@ -943,13 +967,28 @@ def chat():
             if db_con and analytics_collection is not None:
                 analytics_collection.insert_one(analytics_doc)
 
+        # 5. Exercise Trigger Detection
+        # If the manual detector didn't catch a specific issue, we can use the analytics to trigger
+        final_issue = issue_type if issue_type in ["stress", "burnout", "anxiety"] else analytics_data["issue_type"]
+        
+        exercise_trigger = None
+        if final_issue in ["stress", "burnout", "anxiety"]:
+            # Logic to trigger exercises
+            if final_issue == "stress":
+                exercise_trigger = {"type": "breathing", "duration": 120}
+            elif final_issue == "anxiety":
+                exercise_trigger = {"type": "grounding", "duration": 180}
+            elif final_issue == "burnout":
+                exercise_trigger = {"type": "micro_break", "duration": 120}
+
         return jsonify({
             "reply": bot_reply,
             "suggestion": coping_tip,
             "sentiment": sentiment_label,
             "risk": risk_level,
-            "issue": issue_type,
-            "ask_consent": risk_level == "High"
+            "issue": final_issue,
+            "ask_consent": risk_level == "High",
+            "exercise": exercise_trigger
         })
     except Exception as fatal_err:
         print(f" [FATAL] Global Error: {fatal_err}")
@@ -1425,6 +1464,117 @@ def download_pdf_report(report_id):
     doc.build(elements)
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name=f"MindSaarthi_Report_{report_id}.pdf", mimetype='application/pdf')
+
+@app.route('/record-exercise', methods=['POST'])
+@jwt_required()
+def record_exercise():
+    try:
+        user_id = get_jwt_identity()
+        data = request.json
+        exercise_type = data.get('exercise_type')
+        completed = data.get('completed', True)
+        
+        exercise_doc = {
+            "user_id": user_id,
+            "exercise_type": exercise_type,
+            "completed": completed,
+            "timestamp": datetime.datetime.now()
+        }
+        
+        # Save to analytics or a dedicated collection
+        if db_con:
+            db["user_exercises"].insert_one(exercise_doc)
+            
+            # Also update daily progress if there's a task for it
+            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            # If the exercise was breathing, mark that task if it exists
+            if exercise_type == 'breathing':
+                daily_progress_collection.update_one(
+                    {"user_id": user_id, "date": today, "tasks.task_name": {"$regex": "Breathing", "$options": "i"}},
+                    {"$set": {"tasks.$.completed": True}}
+                )
+            
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Record Exercise Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/analyze-face', methods=['POST'])
+@jwt_required()
+def analyze_face():
+    if not ai_client:
+        return jsonify({"emotion": "Neutral", "confidence": 50, "mood": "Unknown", "insight": "AI Vision is currently offline.", "suggestions": ["Try again later."]}), 503
+        
+    try:
+        user_id = get_jwt_identity()
+        data = request.json
+        frames = data.get('frames', []) # List of base64 images
+        
+        if not frames:
+            return jsonify({"error": "No vision frames provided"}), 400
+
+        # Construct multimodal message for Gemini 2.0
+        # We'll take first 2 frames to stay within token/latency limits
+        content_items = [{"type": "text", "text": "Analyze these facial frames from a mental health app. Determine the primary emotion (e.g., Happy, Sad, Stressed, Anxious, Neutral), a mood summary, a deeper insight, and 3 specific actionable suggestions. Return ONLY valid JSON."}]
+        
+        for frame in frames[:4]: # Increased from 2 to 4 for better accuracy
+            # Expecting data:image/jpeg;base64,xxxx
+            content_items.append({
+                "type": "image_url",
+                "image_url": {"url": frame}
+            })
+
+        response = ai_client.chat.completions.create(
+            model="google/gemini-2.0-flash-001",
+            messages=[{
+                "role": "system",
+                "content": "You are a professional clinical wellness analyzer. Output MUST be in JSON format: {'emotion': 'string', 'confidence': number, 'mood': 'string', 'insight': 'string', 'suggestions': []}"
+            }, {
+                "role": "user",
+                "content": content_items
+            }],
+            response_format={"type": "json_object"}
+        )
+        
+        report = json.loads(response.choices[0].message.content)
+        
+        # UI Normalization: If AI returns confidence as 0.75 instead of 75, fix it
+        if isinstance(report.get("confidence"), (float, int)) and report["confidence"] <= 1.0:
+            report["confidence"] = int(report["confidence"] * 100)
+        elif not isinstance(report.get("confidence"), (float, int)):
+            report["confidence"] = 85 # Fallback
+        
+        # PERSIST: Generate a formal session report for the Neural Scan
+        risk_map = {"Sad": "Moderate", "Anxious": "High", "Stressed": "Moderate", "Angry": "Moderate"}
+        current_risk = risk_map.get(report.get("emotion"), "Low")
+        
+        try:
+            generate_session_report(
+                user_id=user_id,
+                session_summary=f"Vision Analysis: {report.get('mood')}. {report.get('insight')}",
+                sentiment_trend=report.get("emotion"),
+                risk_level=current_risk,
+                detected_issues=f"Facial Expression: {report.get('emotion')}",
+                session_type="Neural Vision Scan"
+            )
+        except Exception as report_err:
+            print(f"Error persisting face report: {report_err}")
+        
+        # Log to analytics if significant emotion detected
+        if report.get("emotion") in ["Sad", "Anxious", "Stressed"]:
+            log_high_risk_event(user_id, f"Face Detection: {report.get('emotion')}", hospital="System Monitoring")
+
+        return jsonify(report)
+        
+    except Exception as e:
+        print(f"Face Analysis Error: {e}")
+        return jsonify({
+            "emotion": "Analyzing",
+            "confidence": 0,
+            "mood": "System Error",
+            "insight": "There was a problem processing the neural scan.",
+            "suggestions": ["Ensure good lighting", "Center your face", "Retry scan"]
+        }), 500
 
 # ---- GROUP CHAT & SOCKET.IO FEATURES ----
 

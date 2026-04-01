@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Shield, CheckCheck, Smile, ThumbsUp, Heart } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
-const ChatMessages = ({ messages, isTyping, scrollRef }) => {
+const ChatMessages = ({ messages, isTyping, scrollRef, hasActivity }) => {
     const { darkMode } = useTheme();
 
     const containerVariants = {
@@ -130,6 +130,18 @@ const ChatMessages = ({ messages, isTyping, scrollRef }) => {
                         </motion.div>
                     ))}
                 </AnimatePresence>
+
+                {/* Fixed Spacer for floating input (More generous) */}
+                <div className="h-[160px] shrink-0" />
+                
+                {/* Dynamic Spacer for active exercises/scans */}
+                {hasActivity && (
+                    <motion.div 
+                        initial={{ height: 0 }} 
+                        animate={{ height: 260 }} 
+                        className="shrink-0"
+                    />
+                )}
             </motion.div>
 
             {isTyping && (
