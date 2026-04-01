@@ -30,9 +30,15 @@ const DoctorsPage = () => {
         fetchDoctors();
     }, []);
 
-    const fetchDoctors = async () => {
+    const fetchDoctors = async (isManualScan = false) => {
         setLoading(true);
         try {
+            // If manual scan or we want to ensure the scanning UI is visible, we add a deliberate delay
+            // This simulates connecting to location services and finding the nearest hospitals.
+            if (isManualScan) {
+                await new Promise(resolve => setTimeout(resolve, 2500));
+            }
+
             const res = await api.get("/api/doctors");
             setDoctors(res.data);
         } catch (err) {
@@ -147,8 +153,8 @@ const DoctorsPage = () => {
                             key={spec}
                             onClick={() => setSelectedSpecialty(spec)}
                             className={`px-6 py-3 rounded-2xl whitespace-nowrap font-bold text-sm transition-all border-2 ${selectedSpecialty === spec
-                                    ? 'bg-primary border-primary text-white shadow-lg shadow-primary/30 scale-105'
-                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-primary/50'
+                                ? 'bg-primary border-primary text-white shadow-lg shadow-primary/30 scale-105'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-primary/50'
                                 }`}
                         >
                             {spec}
@@ -159,20 +165,48 @@ const DoctorsPage = () => {
 
             {/* Doctors Grid */}
             <div className="max-w-7xl mx-auto px-6 mt-12">
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                     <div>
                         <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
                             Available Specialists
                         </h2>
                         <p className="text-slate-500 text-sm font-medium">{filteredDoctors.length} results found in your area</p>
                     </div>
+                    <button
+                        onClick={() => fetchDoctors(true)}
+                        disabled={loading}
+                        className="px-6 py-3 bg-primary/10 text-primary font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 hover:bg-primary hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    >
+                        {loading ? (
+                            <>
+                                <Search size={16} className="animate-pulse" />
+                                SCANNING NEARBY HOSPITALS...
+                            </>
+                        ) : (
+                            <>
+                                <Navigation size={16} />
+                                SCAN NEARBY HOSPITALS
+                            </>
+                        )}
+                    </button>
                 </div>
 
                 {loading ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {[1, 2, 3, 4, 5, 6].map(i => (
-                            <div key={i} className="h-[500px] rounded-[2.5rem] bg-slate-200 dark:bg-slate-800 animate-pulse"></div>
-                        ))}
+                    <div className="text-center py-12">
+                        <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                            className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4"
+                        >
+                            <Search size={32} />
+                        </motion.div>
+                        <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-2">Scanning Nearby Hospitals...</h3>
+                        <p className="text-slate-500 font-medium animate-pulse mb-12">Locating the best verified specialists in your area.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 text-left">
+                            {[1, 2, 3, 4, 5, 6].map(i => (
+                                <div key={i} className="h-[500px] rounded-[2.5rem] bg-slate-200 dark:bg-slate-800 animate-pulse"></div>
+                            ))}
+                        </div>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">

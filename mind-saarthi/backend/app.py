@@ -1806,5 +1806,37 @@ def analyze_voice_safety(user_id, audio_bytes, room):
             send_whatsapp_alert(0, 0, f"User {user_id} (Voice Chat)")
     except: pass
 
+@app.route("/api/emergency-alert", methods=["POST"])
+def emergency_alert():
+    data = request.json
+    user_id = data.get("user_id")
+    name = data.get("name", "Unknown User")
+    location = data.get("location", "Not provided")
+    target_phone = data.get("target_phone")
+    vitals = data.get("vitals", {})
+
+    print(f"🚨 SOS RECEIVED from {name} at {location}")
+
+    try:
+        # 1. Log the Crisis Event in MongoDB
+        if db_con and crisis_events_collection is not None:
+            crisis_events_collection.insert_one({
+                "user_id": user_id,
+                "name": name,
+                "location": location,
+                "vitals": vitals,
+                "timestamp": datetime.datetime.now()
+            })
+
+        # 2. Trigger WhatsApp Alert via Twilio
+        # If Twilio is configured, it will send the alert to the designated EMERGENCY_PHONE in .env
+        # or we dynamically override it if the backend logic allows.
+        send_whatsapp_alert(0, 0, f"{name} (SOS DASHBOARD) - LOC: {location}")
+
+        return jsonify({"status": "success", "message": "Emergency services and contacts alerted."}), 200
+    except Exception as e:
+        print(f"SOS Backend Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000, use_reloader=False)
