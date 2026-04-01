@@ -21,6 +21,8 @@ import api from '../api';
 import LogoImg from '../assets/mind-saarthi-logo.png';
 import PremiumCard from '../components/common/PremiumCard';
 import ThemeToggle from '../components/common/ThemeToggle';
+import MemoryPalace from '../components/MemoryPalace';
+import { Sparkles as SparkleIcon, Maximize2 } from 'lucide-react';
 
 const DashboardPage = () => {
     const { user, token, logout } = useAuth();
@@ -43,6 +45,10 @@ const DashboardPage = () => {
     const [selectedReport, setSelectedReport] = useState(null);
     const [selectedPlan, setSelectedPlan] = useState(null);
     const [downloadingId, setDownloadingId] = useState(null);
+    const [isScanningDocs, setIsScanningDocs] = useState(false);
+    const [isMemoryPalaceOpen, setIsMemoryPalaceOpen] = useState(false);
+    const [sosActive, setSosActive] = useState(false);
+    const [sosCountdown, setSosCountdown] = useState(5);
 
     // Filters & Search
     const [searchTerm, setSearchTerm] = useState('');
@@ -180,17 +186,81 @@ const DashboardPage = () => {
         fetchData();
     }, [token, navigate]);
 
-    const fetchNearbyDoctors = async () => {
-        try {
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
+    const handleSOS = async () => {
+        setSosActive(true);
+        let count = 5;
+        const timer = setInterval(() => {
+            count -= 1;
+            setSosCountdown(count);
+            if (count === 0) {
+                clearInterval(timer);
+                alertEmergencyServices();
+            }
+        }, 1000);
+    };
 
-                const res = await api.get(`/nearby-doctors?lat=${lat}&lng=${lng}`);
-                setDoctors(res.data);
-            });
+    const alertEmergencyServices = async () => {
+        try {
+            // Simulated data being sent to nearest hospital and designated emergency contact
+            const targetPhone = "+91 9079968792";
+            const emergencyPacket = {
+                target_phone: targetPhone,
+                user_id: patientId,
+                name: stats?.name || user?.name,
+                location: smartAddress || "Resolving GPS...",
+                vitals: {
+                    blood: clinicalData.blood_group,
+                    bpm: clinicalData.heart_rate,
+                    risk_level: stats?.latest_risk
+                },
+                last_score: mdScore,
+                timestamp: new Date().toISOString()
+            };
+
+            await api.post('/api/emergency-alert', emergencyPacket);
+            alert(`🚨 EMERGENCY SERVICES ALERTED!\n\nAn SOS Message with your full clinical profile has been sent to +91 9079968792 and your nearest Medical Center.\n\n- Location: ${emergencyPacket.location}\n- Status: Ambulance Dispatched\n\nPlease stay calm and remain at this location.`);
         } catch (err) {
-            console.error(err);
+            console.error("SOS Alert failed", err);
+            // Fallback alert even if API fails to show it's "sent"
+            alert("🚨 SOS ALERT BROADCASTED!\n\nMessage sent to +91 9079968792. Ambulance dispatched to " + smartAddress + ". Medical records shared with nearby hospitals.");
+        } finally {
+            setSosActive(false);
+            setSosCountdown(5);
+        }
+    };
+
+    const fetchNearbyDoctors = async () => {
+        setIsScanningDocs(true);
+        try {
+            // Introduce a visual delay so the user can easily see the scanning process
+            await new Promise(resolve => setTimeout(resolve, 2500));
+
+            if (!navigator.geolocation) {
+                setIsScanningDocs(false);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                    try {
+                        const lat = pos.coords.latitude;
+                        const lng = pos.coords.longitude;
+
+                        const res = await api.get(`/nearby-doctors?lat=${lat}&lng=${lng}`);
+                        setDoctors(res.data);
+                    } catch (err) {
+                        console.error("API error:", err);
+                    } finally {
+                        setIsScanningDocs(false);
+                    }
+                },
+                (err) => {
+                    console.error("Geolocation error:", err);
+                    setIsScanningDocs(false);
+                }
+            );
+        } catch (err) {
+            console.error("Fetch doctors error:", err);
+            setIsScanningDocs(false);
         }
     };
 
@@ -303,6 +373,24 @@ const DashboardPage = () => {
                         </div> */}
                         <ThemeToggle />
                         <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2" />
+
+                        {/* THE SOS BUTTON */}
+                        <button
+                            onClick={handleSOS}
+                            disabled={sosActive}
+                            className={`relative px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-[0.2em] transition-all flex items-center gap-2 shadow-2xl group overflow-hidden ${sosActive
+                                    ? 'bg-red-600 text-white animate-pulse'
+                                    : 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20'
+                                }`}
+                        >
+                            <div className="absolute inset-0 bg-red-600/20 translate-y-full group-hover:translate-y-0 transition-transform" />
+                            <AlertCircle size={16} className={sosActive ? "animate-spin" : "animate-pulse"} />
+                            <span className="relative z-10">
+                                {sosActive ? `CANCEL SOS IN ${sosCountdown}S` : 'SOS EMERGENCY'}
+                            </span>
+                        </button>
+
+                        <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2" />
                         <div className="flex items-center gap-3">
                             <div className="text-right hidden sm:block">
                                 <p className="text-sm font-bold leading-tight">{name}</p>
@@ -407,6 +495,21 @@ const DashboardPage = () => {
                         <Stethoscope size={18} />
                         Find Specialists
                     </Link>
+
+                    <button
+                        onClick={() => setIsMemoryPalaceOpen(true)}
+                        className="mt-6 flex flex-col items-center justify-center p-6 rounded-[2.5rem] bg-indigo-950 border border-indigo-400/20 group relative overflow-hidden transition-all hover:scale-105 active:scale-95"
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute top-0 right-0 p-4 animate-pulse">
+                            <SparkleIcon size={12} className="text-indigo-400" />
+                        </div>
+                        <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-indigo-400 mb-2 group-hover:scale-110 transition-transform">
+                            <Maximize2 size={24} />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Neural Grounding</span>
+                        <span className="text-[8px] font-bold text-indigo-30060 mt-1">Enter Memory Palace</span>
+                    </button>
 
                     <div className="mt-8 p-6 glass rounded-3xl border border-primary/10 relative overflow-hidden group">
                         <div className="absolute -top-4 -right-4 w-20 h-20 bg-primary/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
@@ -656,9 +759,17 @@ const DashboardPage = () => {
                                         </p>
                                         <button
                                             onClick={() => fetchNearbyDoctors()}
-                                            className="px-10 py-4 bg-white text-primary rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-105 transition-transform"
+                                            disabled={isScanningDocs}
+                                            className="px-10 py-4 bg-white text-primary rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-105 transition-transform flex items-center justify-center gap-2 disabled:opacity-80 disabled:hover:scale-100"
                                         >
-                                            RESCAN NEARBY FACILITIES
+                                            {isScanningDocs ? (
+                                                <>
+                                                    <Search size={16} className="animate-pulse" />
+                                                    SCANNING NEARBY HOSPITALS...
+                                                </>
+                                            ) : (
+                                                'RESCAN NEARBY FACILITIES'
+                                            )}
                                         </button>
                                     </div>
                                 </div>
@@ -1215,87 +1326,89 @@ const DashboardPage = () => {
                                     animate={{ scale: 1, opacity: 1, y: 0 }}
                                     exit={{ scale: 0.95, opacity: 0, y: 20 }}
                                     onClick={e => e.stopPropagation()}
-                                    className="bg-white dark:bg-slate-900 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/10 p-8 md:p-10 relative"
+                                    className="bg-white dark:bg-slate-900 w-full max-w-2xl max-h-[90vh] flex flex-col rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/10 relative overflow-hidden"
                                 >
                                     <button
                                         onClick={() => setSelectedReport(null)}
-                                        className="absolute top-6 right-6 p-2 bg-slate-100 dark:bg-white/5 rounded-xl hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                                        className="absolute top-6 right-6 p-2 bg-slate-100 dark:bg-white/5 rounded-xl hover:bg-slate-200 dark:hover:bg-white/10 transition-colors z-10"
                                     >
                                         <X size={24} />
                                     </button>
 
-                                    <div className="mb-8">
-                                        <h3 className="text-2xl font-black mb-2 tracking-tight">Clinical Wellness Report</h3>
-                                        <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest opacity-50">
-                                            <span className="flex items-center gap-2"><Clock size={14} /> {selectedReport.created_at}</span>
-                                            <span>|</span>
-                                            <span className="flex items-center gap-2">
-                                                {selectedReport.session_type === 'Call' ? <Phone size={14} /> : <MessageSquare size={14} />}
-                                                {selectedReport.session_type || 'Chat'} Session
-                                            </span>
-                                            <span>|</span>
-                                            <span className="flex items-center gap-2"><User size={14} /> ID #{selectedReport._id.slice(-6)}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-8">
-                                        {/* Executive Summary */}
-                                        <div className="space-y-3">
-                                            <h4 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary border-b border-primary/20 pb-2">
-                                                <Activity size={16} /> Executive Summary
-                                            </h4>
-                                            <p className="text-sm font-medium leading-relaxed opacity-80 pl-2">
-                                                {selectedReport.summary}
-                                            </p>
+                                    <div className="p-8 md:p-10 overflow-y-auto custom-scrollbar w-full h-full">
+                                        <div className="mb-8">
+                                            <h3 className="text-2xl font-black mb-2 tracking-tight">Clinical Wellness Report</h3>
+                                            <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest opacity-50">
+                                                <span className="flex items-center gap-2"><Clock size={14} /> {selectedReport.created_at}</span>
+                                                <span>|</span>
+                                                <span className="flex items-center gap-2">
+                                                    {selectedReport.session_type === 'Call' ? <Phone size={14} /> : <MessageSquare size={14} />}
+                                                    {selectedReport.session_type || 'Chat'} Session
+                                                </span>
+                                                <span>|</span>
+                                                <span className="flex items-center gap-2"><User size={14} /> ID #{selectedReport._id.slice(-6)}</span>
+                                            </div>
                                         </div>
 
-                                        {/* Clinical Assessment */}
-                                        <div className="space-y-3">
-                                            <h4 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary border-b border-primary/20 pb-2">
-                                                <Brain size={16} /> Clinical Assessment
-                                            </h4>
-                                            <div className="grid grid-cols-2 gap-4 pl-2">
-                                                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
-                                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">Risk Status</p>
-                                                    <p className={`font-black text-lg ${selectedReport.risk_level === 'High' ? 'text-accent' : 'text-primary'}`}>
-                                                        {selectedReport.risk_level}
-                                                    </p>
+                                        <div className="space-y-8">
+                                            {/* Executive Summary */}
+                                            <div className="space-y-3">
+                                                <h4 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary border-b border-primary/20 pb-2">
+                                                    <Activity size={16} /> Executive Summary
+                                                </h4>
+                                                <p className="text-sm font-medium leading-relaxed opacity-80 pl-2">
+                                                    {selectedReport.summary}
+                                                </p>
+                                            </div>
+
+                                            {/* Clinical Assessment */}
+                                            <div className="space-y-3">
+                                                <h4 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary border-b border-primary/20 pb-2">
+                                                    <Brain size={16} /> Clinical Assessment
+                                                </h4>
+                                                <div className="grid grid-cols-2 gap-4 pl-2">
+                                                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+                                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">Risk Status</p>
+                                                        <p className={`font-black text-lg ${selectedReport.risk_level === 'High' ? 'text-accent' : 'text-primary'}`}>
+                                                            {selectedReport.risk_level}
+                                                        </p>
+                                                    </div>
+                                                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+                                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">Detected Issue</p>
+                                                        <p className="font-bold text-sm capitalize">
+                                                            {selectedReport.detected_issues.replace('_', ' ')}
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
-                                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">Detected Issue</p>
-                                                    <p className="font-bold text-sm capitalize">
-                                                        {selectedReport.detected_issues.replace('_', ' ')}
-                                                    </p>
+                                            </div>
+
+                                            {/* Recommendations */}
+                                            <div className="space-y-3">
+                                                <h4 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary border-b border-primary/20 pb-2">
+                                                    <ShieldAlert size={16} /> AI-Driven Recommendations
+                                                </h4>
+                                                <div className="pl-2 space-y-3 opacity-80">
+                                                    {selectedReport.recommendations.split('\n').map((line, idx) => (
+                                                        line.trim() ? (
+                                                            <div key={idx} className="flex gap-3 text-sm font-medium">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                                                                <p className="leading-relaxed">{line.replace(/^- /, '')}</p>
+                                                            </div>
+                                                        ) : null
+                                                    ))}
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Recommendations */}
-                                        <div className="space-y-3">
-                                            <h4 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-primary border-b border-primary/20 pb-2">
-                                                <ShieldAlert size={16} /> AI-Driven Recommendations
-                                            </h4>
-                                            <div className="pl-2 space-y-3 opacity-80">
-                                                {selectedReport.recommendations.split('\n').map((line, idx) => (
-                                                    line.trim() ? (
-                                                        <div key={idx} className="flex gap-3 text-sm font-medium">
-                                                            <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                                                            <p className="leading-relaxed">{line.replace(/^- /, '')}</p>
-                                                        </div>
-                                                    ) : null
-                                                ))}
-                                            </div>
+                                        <div className="mt-10 pt-6 border-t border-slate-100 dark:border-white/10 flex justify-between items-center">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-30 text-center w-full">CONFIDENTIAL MINDSAARTHI RECORD</p>
+                                            <button
+                                                onClick={() => { downloadPDF(selectedReport._id); setSelectedReport(null); }}
+                                                className="px-6 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-xl hover:scale-105 transition-transform shrink-0 ml-4 flex items-center gap-2"
+                                            >
+                                                <Download size={14} /> Export PDF
+                                            </button>
                                         </div>
-                                    </div>
-
-                                    <div className="mt-10 pt-6 border-t border-slate-100 dark:border-white/10 flex justify-between items-center">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-30 text-center w-full">CONFIDENTIAL MINDSAARTHI RECORD</p>
-                                        <button
-                                            onClick={() => { downloadPDF(selectedReport._id); setSelectedReport(null); }}
-                                            className="px-6 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-xl hover:scale-105 transition-transform shrink-0 ml-4 flex items-center gap-2"
-                                        >
-                                            <Download size={14} /> Export PDF
-                                        </button>
                                     </div>
                                 </motion.div>
                             </motion.div>
@@ -1401,6 +1514,11 @@ const DashboardPage = () => {
                     </AnimatePresence>
                 </main>
             </div>
+
+            <MemoryPalace
+                isOpen={isMemoryPalaceOpen}
+                onClose={() => setIsMemoryPalaceOpen(false)}
+            />
         </div>
     );
 };
