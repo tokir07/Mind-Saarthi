@@ -28,6 +28,7 @@ import base64
 from gtts import gTTS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import random
+from concurrent.futures import ThreadPoolExecutor
 
 
 
@@ -950,11 +951,8 @@ def chat():
                     upsert=True
                 )
 
-            if risk_level == "High":
-                log_high_risk_event(user_id, user_message)
-            
-            # For hackathon demo, automatically generate a session report entry
-            generate_session_report(user_id, user_message, sentiment_label, risk_level, detect_issue(user_message))
+            # Background tasks for report and analytics to reduce user latency
+            socketio.start_background_task(generate_session_report, user_id, user_message, sentiment_label, risk_level, detect_issue(user_message))
 
             # NEW: Record Behavioral Analytics
             analytics_data = calculate_analytics_scores(user_message, sentiment_label, risk_level)
@@ -1009,7 +1007,9 @@ def voice_chat():
         # 1. Pipeline Analysis
         sentiment_result = None
         sentiment_label = "NEUTRAL"
-        if sentiment_pipeline:
+        # CPU Optimization: AI is much faster at remote inference than local CPU
+        # Skip slow transformer model if OpenRouter is active
+        if not ai_client and sentiment_pipeline:
             try:
                 sentiment_result = sentiment_pipeline(user_message)
                 sentiment_label = sentiment_result[0]['label']
@@ -1077,16 +1077,30 @@ def voice_chat():
             tts_lang = 'en'
             tld = 'co.in'
 
-        audio_chunks_b64 = []
+        audio_chunks_b64 = [None] * len(reply_chunks)
         is_slow = (risk_level == "High" or mode == "therapy")
+
+        def generate_chunk_audio(index, chunk):
+            try:
+                chunk_for_tts = chunk.replace("...", ". ")
+                tts = gTTS(text=chunk_for_tts, lang=tts_lang, tld=tld, slow=is_slow)
+                buffer = io.BytesIO()
+                tts.write_to_fp(buffer)
+                buffer.seek(0)
+                return index, base64.b64encode(buffer.read()).decode('utf-8')
+            except Exception as e:
+                print(f"TTS Chunk Error: {e}")
+                return index, None
+
+        # Execute TTS generation in parallel
+        with ThreadPoolExecutor(max_workers=len(reply_chunks)) as executor:
+            results = list(executor.map(lambda p: generate_chunk_audio(*p), enumerate(reply_chunks)))
+            for idx, b64_audio in results:
+                if b64_audio:
+                    audio_chunks_b64[idx] = b64_audio
         
-        for index, chunk in enumerate(reply_chunks):
-            chunk_for_tts = chunk.replace("...", ". ")
-            tts = gTTS(text=chunk_for_tts, lang=tts_lang, tld=tld, slow=is_slow)
-            buffer = io.BytesIO()
-            tts.write_to_fp(buffer)
-            buffer.seek(0)
-            audio_chunks_b64.append(base64.b64encode(buffer.read()).decode('utf-8'))
+        # Filter out failed chunks
+        audio_chunks_b64 = [c for c in audio_chunks_b64 if c is not None]
         
         # 5. Logging & Analytics
         if user_id:
@@ -1111,7 +1125,8 @@ def voice_chat():
                 })
                 update_personality_profile(user_id, analytics_data)
                 
-            generate_session_report(user_id, user_message, sentiment_label, risk_level, issue_type, session_type="Call")
+            # Background tasks to prevent blocking the voice response
+            socketio.start_background_task(generate_session_report, user_id, user_message, sentiment_label, risk_level, issue_type, session_type="Call")
 
         return jsonify({
             "reply": bot_reply.replace(" | ", " "),
@@ -1839,4 +1854,6 @@ def emergency_alert():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, port=5000, use_reloader=False)
+    # Using 'threading' as a fallback to avoid AssertionError in some Windows environments
+    # without eventlet/gevent installed. Also setting allow_unsafe_werkzeug=True for dev.
+    socketio.run(app, debug=True, port=5000, use_reloader=False, allow_unsafe_werkzeug=True)
