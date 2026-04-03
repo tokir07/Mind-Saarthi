@@ -111,12 +111,12 @@ const FaceAnalysis = ({ onComplete, onCancel }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/80 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[2001] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-2xl">
       <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="glass border border-white/20 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl"
+        initial={{ scale: 0.9, opacity: 0, y: 30 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0, y: 30 }}
+        className="bg-white dark:bg-slate-900 border border-white/10 rounded-[3.5rem] w-full max-w-2xl overflow-hidden shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)]"
       >
         {/* Header */}
         <div className="p-8 pb-0 flex justify-between items-start">

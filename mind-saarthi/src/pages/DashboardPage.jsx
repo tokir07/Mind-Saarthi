@@ -22,7 +22,8 @@ import LogoImg from '../assets/mind-saarthi-logo.png';
 import PremiumCard from '../components/common/PremiumCard';
 import ThemeToggle from '../components/common/ThemeToggle';
 import MemoryPalace from '../components/MemoryPalace';
-import { Sparkles as SparkleIcon, Maximize2 } from 'lucide-react';
+import { Sparkles as SparkleIcon, Maximize2, ClipboardCheck } from 'lucide-react';
+import InitialAssessment from '../components/InitialAssessment';
 
 const DashboardPage = () => {
     const { user, token, logout } = useAuth();
@@ -44,6 +45,8 @@ const DashboardPage = () => {
     const [timeframe, setTimeframe] = useState('7D');
     const [selectedReport, setSelectedReport] = useState(null);
     const [selectedPlan, setSelectedPlan] = useState(null);
+    const [assessmentHistory, setAssessmentHistory] = useState([]);
+    const [assessmentCompleted, setAssessmentCompleted] = useState(!!sessionStorage.getItem('assessmentShownThisSession'));
     const [downloadingId, setDownloadingId] = useState(null);
     const [isScanningDocs, setIsScanningDocs] = useState(false);
     const [isMemoryPalaceOpen, setIsMemoryPalaceOpen] = useState(false);
@@ -141,7 +144,7 @@ const DashboardPage = () => {
                     api.get('/user/profile')
                 ]);
 
-                setStats(sRes.data);
+                setAssessmentCompleted(!!sessionStorage.getItem('assessmentShownThisSession'));
                 if (sRes.data.md_score) setMdScore(sRes.data.md_score);
                 if (sRes.data.health_trajectory) setHealthTrajectory(sRes.data.health_trajectory);
                 if (sRes.data.triage_summary) setTriageSummary(sRes.data.triage_summary);
@@ -155,8 +158,11 @@ const DashboardPage = () => {
                     setEditName(profileRes.data.name || sRes.data.name || "");
                 }
 
-                // Show the UI as soon as core stats are in
                 setLoading(false);
+
+                // Fetch Assessment History
+                const aRes = await api.get('/assessment/history');
+                setAssessmentHistory(aRes.data);
 
                 // 2. Load SECONDARY data in the background (Non-blocking)
                 const [rRes, pRes, riskRes, progRes, analyticsRes, insightsRes, scoreRes] = await Promise.all([
@@ -340,16 +346,176 @@ const DashboardPage = () => {
     });
 
     const sidebarItems = [
-        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        { id: 'group', label: 'Group Chat', icon: Users },
-        { id: 'reports', label: 'Session Reports', icon: FileTextIcon },
-        { id: 'plans', label: 'Recovery Plans', icon: Brain },
-        { id: 'risk', label: 'Risk History', icon: ShieldAlert },
-        { id: 'doctors', label: 'Nearby Hospitals', icon: MapPin },
-        { id: 'profile', label: 'Profile Settings', icon: User },
+        { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'reports', label: 'Medical Reports', icon: Activity },
+        { id: 'assessment', label: 'Self Assessment', icon: ClipboardCheck },
+        { id: 'doctors', label: 'Specialist Connect', icon: Stethoscope },
+        { id: 'plans', label: 'Recovery Roadmaps', icon: Brain },
+        { id: 'profile', label: 'Clinical Profile', icon: User },
+        { id: 'settings', label: 'Security Center', icon: Settings }
     ];
 
     function FileTextIcon(props) { return <Activity {...props} />; }
+
+    const ProfileTab = () => (
+        <motion.div
+            key="profile"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-4xl mx-auto space-y-8 pb-10"
+        >
+            <div className="p-10 rounded-[3rem] bg-gradient-to-br from-primary to-indigo-600 text-white relative overflow-hidden shadow-2xl shadow-primary/20">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-3xl" />
+                <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
+                    <div className="relative group">
+                        <div className="w-32 h-32 rounded-[3.5rem] bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center text-5xl font-black shadow-2xl overflow-hidden uppercase">
+                            {editName ? editName[0] : user?.name?.[0]}
+                        </div>
+                    </div>
+                    <div className="text-center md:text-left flex-1">
+                        <div className="flex items-center justify-center md:justify-start gap-4 mb-2">
+                            {isEditing ? (
+                                <input
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    className="bg-white/10 border-b-2 border-white text-4xl font-black outline-none w-full max-w-sm px-2"
+                                />
+                            ) : (
+                                <h2 className="text-4xl font-black tracking-tight">{editName || user?.name}</h2>
+                            )}
+                            <div className="px-3 py-1 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-widest border border-white/30 whitespace-nowrap">PATIENT {patientId}</div>
+                        </div>
+                        <p className="text-white/80 font-medium mb-6">{user?.email}</p>
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
+                            <div className="px-4 py-2 rounded-2xl bg-white/10 border border-white/20 flex items-center gap-2">
+                                <Activity size={14} className="text-emerald-400" />
+                                <span className="text-xs font-black">{mdScore}% VITALITY</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => isEditing ? handleSaveProfile() : setIsEditing(true)}
+                        className={`px-8 py-4 rounded-3xl font-black text-sm transition-all shadow-xl ${isEditing ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-white text-primary hover:scale-105'}`}
+                    >
+                        {isEditing ? 'SAVE CHANGES' : 'EDIT PROFILE'}
+                    </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] opacity-40 ml-4">Clinical Baseline</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        {[
+                            { label: 'Blood Group', val: clinicalData.blood_group, icon: Droplets, key: 'blood_group', color: 'text-red-500', bg: 'bg-red-500/10' },
+                            { label: 'Height (cm)', val: clinicalData.height, icon: Ruler, key: 'height', color: 'text-primary', bg: 'bg-primary/10' },
+                            { label: 'Weight (kg)', val: clinicalData.weight, icon: Scale, key: 'weight', color: 'text-amber-500', bg: 'bg-amber-500/10' },
+                            { label: 'BPM', val: clinicalData.heart_rate, icon: Activity, key: 'heart_rate', color: 'text-emerald-500', bg: 'bg-emerald-500/10' }
+                        ].map((stat, i) => (
+                            <div key={i} className="p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl">
+                                <div className={`w-10 h-10 rounded-2xl ${stat.bg} ${stat.color} flex items-center justify-center mb-4`}>
+                                    <stat.icon size={20} />
+                                </div>
+                                <p className="text-[10px] font-black uppercase opacity-40 mb-1 leading-none">{stat.label}</p>
+                                {isEditing ? (
+                                    <input
+                                        value={stat.val}
+                                        onChange={(e) => setClinicalData({ ...clinicalData, [stat.key]: e.target.value })}
+                                        className="w-full bg-slate-50 dark:bg-white/5 text-xl font-bold py-1 px-2 rounded-lg"
+                                    />
+                                ) : <h4 className="text-2xl font-black">{stat.val}</h4>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] opacity-40 ml-4">Safety Protocols</h3>
+                    <div className="space-y-4">
+                        <PremiumCard className="p-8">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                                        <Map size={20} />
+                                    </div>
+                                    <p className="text-sm font-black">Clinical Location Hub</p>
+                                </div>
+                                <button onClick={fetchSmartLocation} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-primary transition-all">
+                                    <Navigation size={18} />
+                                </button>
+                            </div>
+                            <div className="p-5 rounded-3xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5">
+                                <p className="text-xl font-black text-primary tracking-tight">{smartAddress}</p>
+                            </div>
+                        </PremiumCard>
+
+                        <PremiumCard className="p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-10 h-10 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center">
+                                    <Heart size={20} />
+                                </div>
+                                <p className="text-sm font-black">Crisis Contact</p>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <div className="flex-1 mr-4">
+                                    {isEditing ? (
+                                        <div className="space-y-2">
+                                            <input
+                                                value={emergencyContact.name}
+                                                onChange={(e) => setEmergencyContact({ ...emergencyContact, name: e.target.value })}
+                                                className="w-full bg-slate-50 dark:bg-white/5 font-black py-1 px-2 rounded-lg text-sm"
+                                            />
+                                            <input
+                                                value={emergencyContact.phone}
+                                                onChange={(e) => setEmergencyContact({ ...emergencyContact, phone: e.target.value })}
+                                                className="w-full bg-slate-50 dark:bg-white/5 font-bold py-1 px-2 rounded-lg text-[10px] tracking-widest"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <p className="text-lg font-black">{emergencyContact.name}</p>
+                                            <p className="text-xs font-bold opacity-40 uppercase tracking-widest">{emergencyContact.phone}</p>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </PremiumCard>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-4 pt-10 border-t border-slate-100 dark:border-white/5">
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] opacity-40 ml-4">Security Center</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <button onClick={() => handleToggleSetting('anonymous')} className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl hover:scale-[1.02] transition-transform">
+                        <div className="flex items-center gap-4">
+                            <Shield size={20} className={anonymousMode ? "text-emerald-500" : "text-primary"} />
+                            <span className="text-xs font-black uppercase tracking-tighter">ANONYMOUS MODE</span>
+                        </div>
+                        <div className={`w-10 h-5 rounded-full relative transition-colors ${anonymousMode ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-white/10'}`}>
+                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${anonymousMode ? 'right-1' : 'left-1'}`} />
+                        </div>
+                    </button>
+                    <button onClick={() => handleToggleSetting('crisis')} className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl hover:scale-[1.02] transition-transform">
+                        <div className="flex items-center gap-4">
+                            <Bell size={20} className={crisisAlerts ? "text-amber-500" : "text-slate-400"} />
+                            <span className="text-xs font-black uppercase tracking-tighter">CRISIS ALERTS</span>
+                        </div>
+                        <div className={`w-10 h-5 rounded-full relative transition-colors ${crisisAlerts ? 'bg-amber-500' : 'bg-slate-200 dark:bg-white/10'}`}>
+                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${crisisAlerts ? 'right-1' : 'left-1'}`} />
+                        </div>
+                    </button>
+                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-white/5 rounded-[2.5rem] opacity-50 cursor-not-allowed">
+                        <div className="flex items-center gap-4">
+                            <ShieldCheck size={20} className="text-slate-400" />
+                            <span className="text-xs font-black uppercase tracking-tighter">DATA ENCRYPTION</span>
+                        </div>
+                        <div className="px-3 py-1 bg-white/20 rounded-lg text-[8px] font-black uppercase">AES-256</div>
+                    </div>
+                </div>
+            </div>
+        </motion.div>
+    );
 
     return (
         <div className="min-h-screen bg-[#f8fafc] dark:bg-[#0f172a] text-slate-900 dark:text-white transition-colors duration-500 flex flex-col">
@@ -397,7 +563,10 @@ const DashboardPage = () => {
                                 <p className="text-[10px] uppercase tracking-tighter opacity-50"></p>
                             </div>
                             <button
-                                onClick={handleLogout}
+                                onClick={() => {
+                                    sessionStorage.removeItem('assessmentShownThisSession');
+                                    handleLogout();
+                                }}
                                 className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all active:scale-90"
                             >
                                 <LogOut size={20} />
@@ -1065,225 +1234,82 @@ const DashboardPage = () => {
                             </motion.div>
                         )}
 
-                        {/* Profile tab ... */}
                         {activeTab === 'profile' && (
-                            <motion.div
-                                key="profile"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="max-w-4xl mx-auto space-y-8 pb-10"
-                            >
-                                {/* 1. Header Identity Section */}
-                                <div className="p-10 rounded-[3rem] bg-gradient-to-br from-primary to-indigo-600 text-white relative overflow-hidden shadow-2xl shadow-primary/20">
-                                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-                                    <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
-                                        <div className="relative group">
-                                            <div className="w-32 h-32 rounded-[3.5rem] bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center text-5xl font-black shadow-2xl overflow-hidden">
-                                                {editName ? editName[0] : name[0]}
-                                            </div>
-                                            <button className="absolute -bottom-2 -right-2 w-10 h-10 rounded-2xl bg-white text-primary flex items-center justify-center shadow-lg hover:scale-110 transition-all">
-                                                <Camera size={18} />
-                                            </button>
-                                        </div>
-                                        <div className="text-center md:text-left flex-1">
-                                            <div className="flex items-center justify-center md:justify-start gap-4 mb-2">
-                                                {isEditing ? (
-                                                    <input
-                                                        value={editName}
-                                                        onChange={(e) => setEditName(e.target.value)}
-                                                        className="bg-white/10 border-b-2 border-white text-4xl font-black outline-none w-full max-w-sm px-2"
-                                                        placeholder="Enter Display Name"
-                                                    />
-                                                ) : (
-                                                    <h2 className="text-4xl font-black tracking-tight">{stats?.name || name}</h2>
-                                                )}
-                                                <div className="px-3 py-1 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-widest border border-white/30 whitespace-nowrap">PATIENT {patientId}</div>
-                                            </div>
-                                            <p className="text-white/80 font-medium mb-6">{user?.email || 'tokir@jecrc.edu.in'}</p>
-                                            <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-                                                <div className="px-4 py-2 rounded-2xl bg-white/10 border border-white/20 flex items-center gap-2">
-                                                    <Activity size={14} className="text-emerald-400" />
-                                                    <span className="text-xs font-black">72% MOOD SCORE</span>
-                                                </div>
-                                                <div className="px-4 py-2 rounded-2xl bg-white/10 border border-white/20 flex items-center gap-2">
-                                                    <Brain size={14} className="text-indigo-300" />
-                                                    <span className="text-xs font-black">12 ANALYTICS</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => isEditing ? handleSaveProfile() : setIsEditing(true)}
-                                            className={`px-8 py-4 rounded-3xl font-black text-sm transition-all shadow-xl ${isEditing ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-white text-primary hover:scale-105'}`}
-                                        >
-                                            {isEditing ? 'SAVE CHANGES' : 'EDIT PROFILE'}
-                                        </button>
+                            <ProfileTab />
+                        )}
+
+                        {activeTab === 'assessment' && (
+                            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                    <div>
+                                        <h2 className="text-[2.5rem] font-black tracking-tighter leading-tight mb-2">Self Assessment Reports</h2>
+                                        <p className="text-slate-500 font-medium">Longitudinal clinical baseline tracking (PHQ-9 & GAD-7 Performance)</p>
                                     </div>
+                                    <button
+                                        onClick={() => setAssessmentCompleted(false)}
+                                        className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
+                                    >
+                                        <ClipboardCheck size={16} /> New Self Assessment
+                                    </button>
                                 </div>
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    {/* 2. Clinical Stats Grid */}
-                                    <div className="space-y-4">
-                                        <h3 className="text-xs font-black uppercase tracking-[0.2em] opacity-40 ml-4">Clinical Overview</h3>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl">
-                                                <div className="w-10 h-10 rounded-2xl bg-red-100 dark:bg-red-500/10 text-red-500 flex items-center justify-center mb-4">
-                                                    <Droplets size={20} />
-                                                </div>
-                                                <p className="text-[10px] font-black uppercase opacity-40 mb-1 leading-none">Blood Group</p>
-                                                {isEditing ? (
-                                                    <input
-                                                        value={clinicalData.blood_group}
-                                                        onChange={(e) => setClinicalData({ ...clinicalData, blood_group: e.target.value })}
-                                                        className="w-full bg-slate-50 dark:bg-white/5 text-xl font-bold py-1 px-2 rounded-lg"
-                                                    />
-                                                ) : <h4 className="text-2xl font-black">{clinicalData.blood_group}</h4>}
-                                            </div>
-                                            <div className="p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl">
-                                                <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4">
-                                                    <Ruler size={20} />
-                                                </div>
-                                                <p className="text-[10px] font-black uppercase opacity-40 mb-1">Height (cm)</p>
-                                                {isEditing ? (
-                                                    <input
-                                                        value={clinicalData.height}
-                                                        onChange={(e) => setClinicalData({ ...clinicalData, height: e.target.value })}
-                                                        className="w-full bg-slate-50 dark:bg-white/5 text-xl font-bold py-1 px-2 rounded-lg"
-                                                    />
-                                                ) : <h4 className="text-2xl font-black">{clinicalData.height}</h4>}
-                                            </div>
-                                            <div className="p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl">
-                                                <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4">
-                                                    <Scale size={20} />
-                                                </div>
-                                                <p className="text-[10px] font-black uppercase opacity-40 mb-1">Weight (kg)</p>
-                                                {isEditing ? (
-                                                    <input
-                                                        value={clinicalData.weight}
-                                                        onChange={(e) => setClinicalData({ ...clinicalData, weight: e.target.value })}
-                                                        className="w-full bg-slate-50 dark:bg-white/5 text-xl font-bold py-1 px-2 rounded-lg"
-                                                    />
-                                                ) : <h4 className="text-2xl font-black">{clinicalData.weight}</h4>}
-                                            </div>
-                                            <div className="p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl">
-                                                <div className="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-4">
-                                                    <Activity size={20} />
-                                                </div>
-                                                <p className="text-[10px] font-black uppercase opacity-40 mb-1">BPM (Resting)</p>
-                                                {isEditing ? (
-                                                    <input
-                                                        value={clinicalData.heart_rate}
-                                                        onChange={(e) => setClinicalData({ ...clinicalData, heart_rate: e.target.value })}
-                                                        className="w-full bg-slate-50 dark:bg-white/5 text-xl font-bold py-1 px-2 rounded-lg"
-                                                    />
-                                                ) : <h4 className="text-2xl font-black">{clinicalData.heart_rate}</h4>}
-                                            </div>
-                                        </div>
+                                {/* Assessment History Trend */}
+                                <PremiumCard className="p-10">
+                                    <div className="flex items-center justify-between mb-10">
+                                        <h4 className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-3">
+                                            <TrendingUp size={16} className="text-primary" /> Baseline Trend Analysis
+                                        </h4>
                                     </div>
-
-                                    {/* 3. Smart Location & Emergency */}
-                                    <div className="space-y-4">
-                                        <h3 className="text-xs font-black uppercase tracking-[0.2em] opacity-40 ml-4">Safety & Tracking</h3>
-                                        <div className="space-y-4">
-                                            <div className="p-8 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                                                            <Map size={20} />
-                                                        </div>
-                                                        <p className="text-sm font-black">Live Smart Location</p>
-                                                    </div>
-                                                    <button onClick={fetchSmartLocation} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-primary transition-all">
-                                                        <Navigation size={18} />
-                                                    </button>
-                                                </div>
-                                                <div className="p-5 rounded-3xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5">
-                                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Default Landmark</p>
-                                                    <p className="text-xl font-black text-primary tracking-tight">{smartAddress}</p>
-                                                    <div className="mt-4 flex items-center gap-2 text-[10px] font-black text-emerald-500 uppercase tracking-widest">
-                                                        <ShieldCheck size={12} />
-                                                        Active High Precision Tracking
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="p-8 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl">
-                                                <div className="flex items-center gap-3 mb-6">
-                                                    <div className="w-10 h-10 rounded-2xl bg-accent/10 text-accent flex items-center justify-center">
-                                                        <Heart size={20} />
-                                                    </div>
-                                                    <p className="text-sm font-black">Emergency Contact</p>
-                                                </div>
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex-1 mr-4">
-                                                        {isEditing ? (
-                                                            <div className="space-y-2">
-                                                                <input
-                                                                    value={emergencyContact.name}
-                                                                    onChange={(e) => setEmergencyContact({ ...emergencyContact, name: e.target.value })}
-                                                                    className="w-full bg-slate-50 dark:bg-white/5 font-black py-1 px-2 rounded-lg text-sm"
-                                                                    placeholder="Contact Name"
-                                                                />
-                                                                <input
-                                                                    value={emergencyContact.phone}
-                                                                    onChange={(e) => setEmergencyContact({ ...emergencyContact, phone: e.target.value })}
-                                                                    className="w-full bg-slate-50 dark:bg-white/5 font-bold py-1 px-2 rounded-lg text-[10px] tracking-widest"
-                                                                    placeholder="Phone Number"
-                                                                />
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <p className="text-lg font-black">{emergencyContact.name}</p>
-                                                                <p className="text-xs font-bold opacity-40 uppercase tracking-widest">{emergencyContact.phone}</p>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                    {!isEditing && <button onClick={() => setIsEditing(true)} className="px-5 py-2 rounded-2xl border border-accent/20 text-accent font-black text-[10px] uppercase tracking-widest whitespace-nowrap">Change</button>}
-                                                </div>
-                                            </div>
-                                        </div>
+                                    <div className="h-[350px] w-full -ml-8">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={assessmentHistory}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.03)" />
+                                                <XAxis 
+                                                    dataKey="timestamp" 
+                                                    axisLine={false} 
+                                                    tickLine={false} 
+                                                    tick={{ fill: 'rgba(0,0,0,0.3)', fontSize: 10, fontWeight: 900 }} 
+                                                />
+                                                <YAxis hide />
+                                                <Tooltip 
+                                                    contentStyle={{ borderRadius: '1.5rem', border: 'none', boxShadow: '0 20px 50px rgba(0,0,0,0.1)', padding: '1.5rem' }} 
+                                                />
+                                                <Line type="monotone" dataKey="phq9_score" name="Mood (PHQ-9)" stroke="#4f46e5" strokeWidth={4} dot={{ r: 6, fill: '#4f46e5' }} />
+                                                <Line type="monotone" dataKey="gad7_score" name="Anxiety (GAD-7)" stroke="#06b6d4" strokeWidth={4} dot={{ r: 6, fill: '#06b6d4' }} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
                                     </div>
+                                </PremiumCard>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {assessmentHistory.slice().reverse().map((a, i) => (
+                                        <PremiumCard key={i} className="p-8 group hover:border-primary/30 transition-all cursor-pointer">
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div className="text-[9px] font-black uppercase tracking-widest opacity-30">{a.timestamp}</div>
+                                                <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                                                    a.risk_level === 'Low' ? 'bg-emerald-500/10 text-emerald-500' :
+                                                    a.risk_level === 'Moderate' ? 'bg-amber-500/10 text-amber-500' :
+                                                    'bg-red-500/10 text-red-500'
+                                                }`}>
+                                                    {a.risk_level} Risk
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4 mb-4">
+                                                <div className="w-10 h-10 bg-slate-50 dark:bg-white/5 rounded-xl flex items-center justify-center font-black text-xs">
+                                                    {a.total_score}
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-50">Combined Score</div>
+                                                    <div className="text-sm font-bold opacity-80 leading-tight">Clinical Baseline Record</div>
+                                                </div>
+                                            </div>
+                                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-white/5">
+                                                <p className="text-[11px] font-medium opacity-60 leading-relaxed italic">"{a.ai_insight}"</p>
+                                            </div>
+                                        </PremiumCard>
+                                    ))}
                                 </div>
-
-                                {/* 4. System Settings Section */}
-                                <div className="space-y-4 pt-10 border-t border-slate-100 dark:border-white/5">
-                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] opacity-40 ml-4">System Security</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        <div
-                                            onClick={() => handleToggleSetting('anonymous')}
-                                            className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl cursor-pointer hover:scale-[1.02] transition-transform"
-                                        >
-                                            <div className="flex items-center gap-4">
-                                                <Shield size={20} className={anonymousMode ? "text-emerald-500" : "text-primary"} />
-                                                <span className="text-xs font-black uppercase tracking-tighter">ANONYMOUS MODE</span>
-                                            </div>
-                                            <div className={`w-10 h-5 rounded-full relative transition-colors ${anonymousMode ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-white/10'}`}>
-                                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${anonymousMode ? 'right-1' : 'left-1'}`}></div>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl opacity-50 cursor-not-allowed">
-                                            <div className="flex items-center gap-4">
-                                                <MapPin size={20} className="text-slate-400" />
-                                                <span className="text-xs font-black uppercase tracking-tighter">HIDE LOCATION</span>
-                                            </div>
-                                            <div className="w-10 h-5 bg-slate-300 rounded-full relative">
-                                                <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full"></div>
-                                            </div>
-                                        </div>
-                                        <div
-                                            onClick={() => handleToggleSetting('crisis')}
-                                            className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl cursor-pointer hover:scale-[1.02] transition-transform"
-                                        >
-                                            <div className="flex items-center gap-4">
-                                                <Bell size={20} className={crisisAlerts ? "text-amber-500" : "text-slate-400"} />
-                                                <span className="text-xs font-black uppercase tracking-tighter">CRISIS ALERTS</span>
-                                            </div>
-                                            <div className={`w-10 h-5 rounded-full relative transition-colors ${crisisAlerts ? 'bg-amber-500' : 'bg-slate-200 dark:bg-white/10'}`}>
-                                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${crisisAlerts ? 'right-1' : 'left-1'}`}></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </motion.div>
+                            </div>
                         )}
 
                         {activeTab === 'group' && (
@@ -1519,6 +1545,15 @@ const DashboardPage = () => {
                 isOpen={isMemoryPalaceOpen}
                 onClose={() => setIsMemoryPalaceOpen(false)}
             />
+
+            {!assessmentCompleted && (
+                <InitialAssessment onComplete={async () => {
+                    sessionStorage.setItem('assessmentShownThisSession', 'true');
+                    setAssessmentCompleted(true);
+                    const aRes = await api.get('/assessment/history');
+                    setAssessmentHistory(aRes.data);
+                }} />
+            )}
         </div>
     );
 };

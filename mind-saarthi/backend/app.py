@@ -282,7 +282,8 @@ try:
         "name": "Demo User",
         "email": demo_email,
         "password": hashed_demo,
-        "created_at": datetime.datetime.now()
+        "created_at": datetime.datetime.now(),
+        "has_completed_assessment": True
     }
     
     if db_con:
@@ -722,7 +723,8 @@ def signup():
         "name": name,
         "email": email.lower(),
         "password": hashed_password,
-        "created_at": datetime.datetime.now()
+        "created_at": datetime.datetime.now(),
+        "has_completed_assessment": False
     }
 
     if db_con:
@@ -760,7 +762,8 @@ def login():
             "user": {
                 "id": user_id,
                 "name": user["name"],
-                "email": user["email"]
+                "email": user["email"],
+                "has_completed_assessment": user.get("has_completed_assessment", False)
             }
         }), 200
 
@@ -821,12 +824,122 @@ def dashboard():
 
     return jsonify({
         "name": user_name,
+        "has_completed_assessment": user.get("has_completed_assessment", False) if user else False,
         "latest_risk": overall_risk,
         "mood_history": history,
         "md_score": md_val,
         "health_trajectory": traj,
         "triage_summary": f"Predictive intelligence indicates stability at {md_val}% for the next 72h."
     })
+
+# ---- NEW ASSESSMENT ENGINE ----
+
+@app.route('/assessment/questions', methods=['GET'])
+@jwt_required()
+def get_assessment_questions():
+    questions = [
+        # PHQ-9 (Mood)
+        {"id": "q1", "text": "Little interest or pleasure in doing things?", "category": "Mood"},
+        {"id": "q2", "text": "Feeling down, depressed, or hopeless?", "category": "Mood"},
+        {"id": "q3", "text": "Trouble falling or staying asleep, or sleeping too much?", "category": "Sleep"},
+        {"id": "q4", "text": "Feeling tired or having little energy?", "category": "Energy"},
+        {"id": "q5", "text": "Poor appetite or overeating?", "category": "Appetite"},
+        {"id": "q6", "text": "Feeling bad about yourself — or that you are a failure?", "category": "Self-Esteem"},
+        {"id": "q7", "text": "Trouble concentrating on things, such as reading or watching TV?", "category": "Focus"},
+        {"id": "q8", "text": "Moving or speaking so slowly that other people could have noticed?", "category": "Motor"},
+        {"id": "q9", "text": "Thoughts that you would be better off dead, or of hurting yourself?", "category": "Crisis"},
+        
+        # GAD-7 (Anxiety)
+        {"id": "q10", "text": "Feeling nervous, anxious, or on edge?", "category": "Anxiety"},
+        {"id": "q11", "text": "Not being able to stop or control worrying?", "category": "Anxiety"},
+        {"id": "q12", "text": "Worrying too much about different things?", "category": "Anxiety"},
+        {"id": "q13", "text": "Trouble relaxing?", "category": "Anxiety"},
+        {"id": "q14", "text": "Being so restless that it is hard to sit still?", "category": "Anxiety"},
+        {"id": "q15", "text": "Becoming easily annoyed or irritable?", "category": "Anxiety"},
+        {"id": "q16", "text": "Feeling afraid, as if something awful might happen?", "category": "Anxiety"}
+    ]
+    return jsonify(questions)
+
+@app.route('/assessment/submit', methods=['POST'])
+@jwt_required()
+def submit_assessment():
+    try:
+        user_id = get_jwt_identity()
+        data = request.json
+        responses = data.get('responses', []) # List of {questionId, value (0-3)}
+        
+        # Calculate Scores
+        phq9_score = sum(r['value'] for r in responses[:9])
+        gad7_score = sum(r['value'] for r in responses[9:])
+        total_score = phq9_score + gad7_score
+        
+        # Clinical Risk Classification
+        risk_level = "Low"
+        if total_score >= 30: risk_level = "High"
+        elif total_score >= 15: risk_level = "Moderate"
+        
+        # Hybrid AI Insight
+        ai_insight = "Your baseline shows stability. We will track your patterns daily."
+        if risk_level == "High" or risk_level == "Moderate":
+            prompt = f"A user scored {phq9_score} on PHQ-9 and {gad7_score} on GAD-7. Provide a 1-sentence supportive clinical insight."
+            try:
+                res = ai_client.chat.completions.create(
+                    model="google/gemini-2.0-flash-001",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                ai_insight = res.choices[0].message.content.strip()
+            except: pass
+
+        assessment_doc = {
+            "user_id": user_id,
+            "phq9_score": phq9_score,
+            "gad7_score": gad7_score,
+            "total_score": total_score,
+            "risk_level": risk_level,
+            "ai_insight": ai_insight,
+            "timestamp": datetime.datetime.now()
+        }
+        
+        if db_con:
+            assessment_collection.insert_one(assessment_doc)
+            users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"has_completed_assessment": True}})
+            
+        # Trigger Priority WhatsApp Alert if High Risk
+        if risk_level == "High":
+            user_prof = users_collection.find_one({"_id": ObjectId(user_id)})
+            user_name = user_prof.get('name', 'Mental Health Patient') if user_prof else "Clinical Patient"
+            
+            # Log event globally
+            log_high_risk_event(user_id, f"Initial Assessment detected HIGH RISK baseline for {user_name}.")
+            
+            # Dispatch WhatsApp Alert
+            send_whatsapp_alert(0, 0, user_name + " (Baseline Crisis)")
+
+        return jsonify({
+            "status": "success",
+            "score": total_score,
+            "risk_level": risk_level,
+            "ai_insight": ai_insight
+        })
+    except Exception as e:
+        print(f"Assessment Submit Error: {e}")
+        return jsonify({"error": "Failed to process assessment"}), 500
+
+@app.route('/assessment/history', methods=['GET'])
+@jwt_required()
+def get_assessment_history():
+    try:
+        user_id = get_jwt_identity()
+        if not db_con: return jsonify([])
+        
+        history = list(assessment_collection.find({"user_id": user_id}).sort("timestamp", 1))
+        for h in history:
+            h["_id"] = str(h["_id"])
+            h["timestamp"] = h["timestamp"].strftime("%b %d, %Y")
+            
+        return jsonify(history)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ----  Sentimental Fallback Engine (In case of 429 Quota Errors) ----
 def get_hardcoded_empathy(risk_level, sentiment):
