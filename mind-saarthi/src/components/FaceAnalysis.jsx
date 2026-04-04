@@ -33,7 +33,7 @@ const FaceAnalysis = ({ onComplete, onCancel }) => {
   const streamRef = useRef(null);
   const framesRef = useRef([]);
 
-  const SCAN_DURATION = 2000; // 2 seconds for faster experience
+  const SCAN_DURATION = 3000; // Increased to 3 seconds for higher accuracy
 
   const startCamera = async () => {
     try {
@@ -73,8 +73,8 @@ const FaceAnalysis = ({ onComplete, onCancel }) => {
     setStatus("Scanning");
     framesRef.current = [];
 
-    // Capture 4 frames during the 2sec scan for better averaging
-    const captureInterval = setInterval(captureFrame, 450);
+    // Capture 8 frames during the 3sec scan for better averaging and micro-expression detection
+    const captureInterval = setInterval(captureFrame, 350);
     const startTime = Date.now();
 
     const updateProgress = setInterval(() => {
@@ -111,12 +111,12 @@ const FaceAnalysis = ({ onComplete, onCancel }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[2001] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-2xl">
+    <div className="fixed inset-0 z-[2001] flex items-center justify-center p-4 md:p-6 bg-slate-900/60 backdrop-blur-2xl">
       <motion.div
         initial={{ scale: 0.9, opacity: 0, y: 30 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 30 }}
-        className="bg-white dark:bg-slate-900 border border-white/10 rounded-[3.5rem] w-full max-w-2xl overflow-hidden shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)]"
+        className="bg-white dark:bg-slate-900 border border-white/10 rounded-[2.5rem] md:rounded-[3.5rem] w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] custom-scrollbar"
       >
         {/* Header */}
         <div className="p-8 pb-0 flex justify-between items-start">
@@ -175,16 +175,32 @@ const FaceAnalysis = ({ onComplete, onCancel }) => {
                 <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-medium">{report.insight}</p>
               </div>
 
-              <div className="space-y-3">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-2">Actionable Suggestions</h4>
-                {report.suggestions.map((s, i) => (
-                  <div key={i} className="flex items-center gap-3 p-4 glass-card border-emerald-500/10 dark:border-emerald-500/20 rounded-2xl">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
-                      <ThumbsUp size={12} />
-                    </div>
-                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{s}</p>
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Clinical Neural Markers</h4>
+                  <div className="flex flex-wrap gap-2 px-2">
+                    {report.au_detected?.map((au, i) => (
+                      <span key={i} className="px-2 py-1 bg-primary/5 border border-primary/20 text-primary text-[9px] font-bold rounded-lg uppercase tracking-tight">
+                        {au}
+                      </span>
+                    ))}
+                    {(!report.au_detected || report.au_detected.length === 0) && (
+                      <span className="text-[9px] italic opacity-40">No micro-expressions isolated in current scan window.</span>
+                    )}
                   </div>
-                ))}
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 px-2">Actionable Suggestions</h4>
+                  {report.suggestions.map((s, i) => (
+                    <div key={i} className="flex items-center gap-3 p-4 glass-card border-emerald-500/10 dark:border-emerald-500/20 rounded-2xl">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
+                        <ThumbsUp size={12} />
+                      </div>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{s}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <button

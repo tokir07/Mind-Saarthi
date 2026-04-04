@@ -69,7 +69,26 @@ const ChatPage = () => {
     }, [inputValue]);
 
     useEffect(() => {
-        if (!token) navigate('/login');
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+
+        const fetchHistory = async () => {
+            try {
+                const response = await axios.get('http://localhost:5000/chat/history', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                if (response.data && response.data.length > 0) {
+                    setMessages(response.data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch chat history:", err);
+            }
+        };
+
+        fetchHistory();
     }, [token, navigate]);
 
     useEffect(() => {
@@ -309,7 +328,7 @@ const ChatPage = () => {
                 <div className="p-6 bg-gradient-to-t from-background-light dark:from-background-dark via-background-light dark:via-background-dark to-transparent relative z-20">
                     <div className="max-w-4xl mx-auto">
                         <AnimatePresence>
-                            {isTyping && (
+                            {isTyping ? (
                                 <motion.div 
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
@@ -317,7 +336,35 @@ const ChatPage = () => {
                                     className="px-4 py-2 text-xs font-semibold text-primary dark:text-primary-light flex items-center gap-2 mb-2"
                                 >
                                     <Sparkles size={12} className="animate-pulse" />
-                                    MindSaarthi is thinking...
+                                    MindSaarthi is processing your thoughts...
+                                </motion.div>
+                            ) : (
+                                <motion.div 
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="flex items-center gap-2 overflow-x-auto pb-4 scrollbar-hide no-scrollbar"
+                                >
+                                    {[
+                                        { label: "I'm feeling stressed", icon: "😓" },
+                                        { label: "Need a breathing exercise", icon: "🧘" },
+                                        { label: "Analyze my neural scan", icon: "🧠" },
+                                        { label: "Check my recovery roadmap", icon: "🗺️" },
+                                        { label: "I'm having a panic attack", icon: "🚨" }
+                                    ].map((chip, i) => (
+                                        <motion.button
+                                            key={i}
+                                            whileHover={{ scale: 1.05, backgroundColor: 'rgba(23, 93, 197, 0.1)' }}
+                                            whileTap={{ scale: 0.95 }}
+                                            onClick={() => {
+                                                setInputValue(chip.label);
+                                                // trigger handleSend manually or just let them click send
+                                            }}
+                                            className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm text-[11px] font-bold whitespace-nowrap flex items-center gap-2 transition-colors hover:border-primary/30"
+                                        >
+                                            <span>{chip.icon}</span>
+                                            {chip.label}
+                                        </motion.button>
+                                    ))}
                                 </motion.div>
                             )}
                         </AnimatePresence>

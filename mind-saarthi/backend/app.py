@@ -589,53 +589,101 @@ def send_whatsapp_alert(lat, lng, user_name="A User"):
 # ---- Advanced Reporting & Analytics ----
 
 def generate_session_report(user_id, session_summary, sentiment_trend, risk_level, detected_issues, session_type="Chat"):
-    """Summarize and save a chat session to MongoDB, then spawn a unique recovery plan."""
+    """Summarize and save a chat session to MongoDB, then update or create a report based on a 1-hour time window."""
     try:
-        # 1. Generate Recommendations using AI (Mental Health Report)
+        now = datetime.datetime.now()
+        one_hour_ago = now - datetime.timedelta(hours=1)
+        
+        # 1. Check for an existing report within the last 1 hour (only for recurring session types like Chat and Call)
+        existing_report = None
+        if db_con and session_reports_collection is not None and session_type in ["Chat", "Call"]:
+            existing_report = session_reports_collection.find_one({
+                "user_id": user_id,
+                "session_type": session_type,
+                "created_at": {"$gte": one_hour_ago}
+            })
+            
+        full_summary = session_summary
+        if existing_report:
+            # Concatenate summaries for AI re-processing
+            full_summary = existing_report.get('summary', '') + " | New Entry: " + session_summary
+            
+        # 2. Generate Recommendations & Re-summarize using AI
         if not ai_client:
             recommendations = "Seek support from trusted circles. Maintain a regular meditation habit."
+            final_ai_summary = full_summary
         else:
-            prompt = f"Summarize the following mental health session insights and provide 3-4 professional recommendations based on: {session_summary}. Risk Level: {risk_level}. Sentiment Trend: {sentiment_trend}."
+            # If updating, we ask AI to summarize the entire one-hour period elegantly
+            prompt = f"""
+            Summarize the following mental health session insights covering a 1-hour period and provide updated actionable recommendations.
+            Full Activity Content: {full_summary}
+            Latest Risk Level: {risk_level}
+            Latest Sentiment: {sentiment_trend}
+            
+            Task:
+            1. Create a cohesive 'Executive Summary' of the last hour.
+            2. Provide 3-4 professional recommendations.
+            Format the response clearly.
+            """
             response = ai_client.chat.completions.create(
                 model="google/gemini-2.0-flash-001",
                 messages=[{"role": "user", "content": prompt}]
             )
-            recommendations = response.choices[0].message.content.strip()
+            ai_resp = response.choices[0].message.content.strip()
+            # Split recommendations and summary if AI provides them separately or just use the block
+            recommendations = ai_resp
+            final_ai_summary = full_summary
 
-        # 2. Store Session Report
-        report_doc = {
-            "user_id": user_id,
-            "session_type": session_type,
-            "summary": session_summary,
+        # 3. Store/Update Session Report
+        report_update = {
+            "summary": final_ai_summary,
             "sentiment_trend": sentiment_trend,
             "risk_level": risk_level,
             "detected_issues": detected_issues,
             "recommendations": recommendations,
-            "created_at": datetime.datetime.now()
+            "last_updated": now
         }
+        
         if db_con and session_reports_collection is not None:
-            session_reports_collection.insert_one(report_doc)
+            if existing_report:
+                session_reports_collection.update_one(
+                    {"_id": existing_report["_id"]},
+                    {"$set": report_update}
+                )
+                print(f" [+] Updated existing {session_type} report for user {user_id}")
+            else:
+                report_doc = {
+                    "user_id": user_id,
+                    "session_type": session_type,
+                    "created_at": now,
+                    **report_update
+                }
+                session_reports_collection.insert_one(report_doc)
+                print(f" [+] Created new {session_type} report for user {user_id}")
 
-        # 3. Spawn a RECOVERY PLAN Architecture (Automatically)
-        # This addresses user feedback about 'plans always being the same'
+        # 4. Spawn/Update RECOVERY PLAN Architecture (Automatically)
         try:
-            plan = generate_recovery_plan_ai(user_id, session_summary, risk_level, sentiment_trend, context=f"Issues: {detected_issues}")
+            plan = generate_recovery_plan_ai(user_id, final_ai_summary, risk_level, sentiment_trend, context=f"Issues: {detected_issues}")
             plan_doc = {
                 "user_id": user_id,
                 "plan": plan,
                 "issue_type": plan.get("issue", "clinical_event"),
                 "risk_level": risk_level,
                 "sentiment_label": sentiment_trend,
-                "created_at": datetime.datetime.now(),
+                "created_at": now,
                 "status": "active"
             }
             if recovery_plans_collection is not None:
-                recovery_plans_collection.insert_one(plan_doc)
-                print(" Dynamic Recovery Plan spawned for report.")
+                # Update existing plan for this hour session or create new
+                recovery_plans_collection.update_one(
+                    {"user_id": user_id, "created_at": {"$gte": one_hour_ago}, "issue_type": plan_doc["issue_type"]},
+                    {"$set": plan_doc},
+                    upsert=True
+                )
         except Exception as pe:
-            print(f" Recovery Plan Spawn Error: {pe}")
+            print(f" Recovery Plan Spawn/Update Error: {pe}")
 
-        return report_doc
+        return report_update
     except Exception as e:
         print(f"Reporting Error: {e}")
         return None
@@ -1012,7 +1060,9 @@ def chat():
         else:
             try:
                 system_prompt = "You are MindSaarthi, a personalized AI Mental Health Assistant."
-                if mode == "therapy":
+                if risk_level == "High":
+                    system_prompt += " CRITICAL: The user is in potential distress. Your primary goal is to keep them engaged, safe, and talking. Continually ask gentle, deep emotional questions to understand their feelings. NEVER end the conversation or give generic advice. Keep them sharing until help arrives or they feel significantly calmer."
+                elif mode == "therapy":
                     system_prompt += " Act as a professional therapist. Ask deep, reflective questions. Speak slowly and thoughtfully. Focus on root causes."
                 else:
                     system_prompt += " Be empathetic, conversational, and direct. Use short, helpful responses."
@@ -1105,6 +1155,46 @@ def chat():
         print(f" [FATAL] Global Error: {fatal_err}")
         traceback.print_exc()
         return jsonify({"reply": "I'm experiencing a small temporary issue, but I'm still here for you. Tell me more?"}), 500
+
+@app.route('/chat/history', methods=['GET'])
+@jwt_required()
+def get_chat_history():
+    try:
+        user_id = get_jwt_identity()
+        # Fetch last 2 days of chat
+        two_days_ago = datetime.datetime.now() - datetime.timedelta(days=2)
+        
+        if db_con:
+            chats = list(chats_collection.find({
+                "user_id": user_id,
+                "timestamp": {"$gte": two_days_ago}
+            }).sort("timestamp", 1))
+        else:
+            chats = [c for c in mock_chats if c["user_id"] == user_id and c["timestamp"] >= two_days_ago]
+            
+        formatted_history = []
+        for c in chats:
+            formatted_history.append({
+                "id": str(c["_id"]),
+                "type": 'user',
+                "text": c["user_message"],
+                "timestamp": c["timestamp"].strftime("%I:%M %p") if isinstance(c["timestamp"], datetime.datetime) else c["timestamp"],
+                "date": c["timestamp"].strftime("%Y-%m-%d") if isinstance(c["timestamp"], datetime.datetime) else ""
+            })
+            formatted_history.append({
+                "id": str(c["_id"]) + "_bot",
+                "type": 'bot',
+                "text": c["bot_reply"],
+                "risk": c.get("risk", "Low"),
+                "sentiment": c.get("sentiment", "Neutral"),
+                "timestamp": c["timestamp"].strftime("%I:%M %p") if isinstance(c["timestamp"], datetime.datetime) else c["timestamp"],
+                "date": c["timestamp"].strftime("%Y-%m-%d") if isinstance(c["timestamp"], datetime.datetime) else ""
+            })
+            
+        return jsonify(formatted_history)
+    except Exception as e:
+        print(f"Chat History Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 # ---- VOICE LLM INTERFACE ----
 @app.route('/voice-chat', methods=['POST'])
@@ -1500,19 +1590,49 @@ def get_emotional_trend():
 @app.route('/user-insights', methods=['GET'])
 @jwt_required()
 def get_user_insights():
-    user_id = get_jwt_identity()
-    if personality_collection is None: return jsonify({})
-    profile = personality_collection.find_one({"user_id": user_id})
-    if not profile: return jsonify({"message": "Keep talking to MindSaarthi to unlock personal insights!"})
-    
-    insight_text = f"You tend to feel more {profile.get('dominant_issue')} during the {profile.get('peak_stress_period')}."
-    return jsonify({
-        "dominant_issue": profile.get("dominant_issue"),
-        "peak_stress_period": profile.get("peak_stress_period"),
-        "insight": insight_text,
-        "avg_mood": profile.get("avg_mood"),
-        "avg_stress": profile.get("avg_stress")
-    })
+    try:
+        user_id = get_jwt_identity()
+        if not ai_client: return jsonify({"insight": "AI Intelligence is warming up..."})
+        
+        # 1. Gather all Modal Context for the last 14 days
+        analytics = list(analytics_collection.find({"user_id": user_id}).sort("timestamp", -1).limit(20))
+        chats = list(chats_collection.find({"user_id": user_id}).sort("timestamp", -1).limit(10))
+        face_scans = list(session_reports_collection.find({"user_id": user_id, "session_type": "Neural Vision Scan"}).sort("created_at", -1).limit(5))
+        
+        context_data = {
+            "mood_trend": [a.get('mood_score') for a in analytics],
+            "stress_trend": [a.get('stress_score') for a in analytics],
+            "recent_chat_sentiments": [c.get('sentiment') for c in chats],
+            "recent_facial_emotions": [f.get('sentiment_trend') for f in face_scans]
+        }
+        
+        # 2. Ask Gemini for a high-level Clinical Behavioral Profile
+        prompt = f"""
+        Analyze this emotional meta-data for a MindSaarthi user: {context_data}.
+        
+        Task: Create a 'Behavioral Wellness Profile'.
+        Format (JSON only):
+        {{
+          "dominant_vibe": "Summary of current state",
+          "patterns": ["2-3 specific behavioral patterns found in data"],
+          "peak_stress_trigger": "What seems to cause their stress?",
+          "clinical_insight": "A professional therapist-style paragraph about their mental trajectory",
+          "resilience_score": number 0-100,
+          "next_steps": ["2 actionable therapy goals"]
+        }}
+        """
+        
+        response = ai_client.chat.completions.create(
+            model="google/gemini-2.0-flash-001",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        
+        analysis = json.loads(response.choices[0].message.content)
+        return jsonify(analysis)
+    except Exception as e:
+        print(f"Insight Engine Error: {e}")
+        return jsonify({"message": "Still gathering enough data to unlock your AI Profile..."}), 200
 
 @app.route('/download-report/<report_id>', methods=['GET'])
 @jwt_required()
@@ -1641,12 +1761,31 @@ def analyze_face():
         if not frames:
             return jsonify({"error": "No vision frames provided"}), 400
 
-        # Construct multimodal message for Gemini 2.0
-        # We'll take first 2 frames to stay within token/latency limits
-        content_items = [{"type": "text", "text": "Analyze these facial frames from a mental health app. Determine the primary emotion (e.g., Happy, Sad, Stressed, Anxious, Neutral), a mood summary, a deeper insight, and 3 specific actionable suggestions. Return ONLY valid JSON."}]
+        # Construct multimodal message for Gemini 2.0 (High-Accuracy Neural Vision)
+        content_items = [{
+            "type": "text", 
+            "text": """
+            Perform a Deep Clinical Facial Analysis on these 8 sequential frames. 
+            Analyze small temporal changes in facial muscles (Action Units) to detect true emotional baseline.
+            
+            Key Focus Areas:
+            - Upper Face: AU1 (Inner Brow), AU4 (Brow Lowerer), AU6 (Cheek Raiser)
+            - Lower Face: AU12 (Lip Corner Puller), AU15 (Lip Corner Depressor), AU10 (Upper Lip Raiser)
+            - Eye Region: Blink frequency, squinting, or tension around the orbicularis oculi (Duchenne logic).
+            
+            Diagnostic Output (JSON only):
+            {
+              "emotion": "Dominant clinical emotion",
+              "confidence": number 0-100,
+              "mood": "Specific healthcare-style sentiment summary",
+              "insight": "A deep psychological insight about why they might be feeling this based on muscle patterns",
+              "suggestions": ["3-4 specific behavioral therapy steps to resolve or maintain this mood"],
+              "au_detected": ["List of suspected Action Units identified"]
+            }
+            """
+        }]
         
-        for frame in frames[:4]: # Increased from 2 to 4 for better accuracy
-            # Expecting data:image/jpeg;base64,xxxx
+        for frame in frames[:8]: # Analyze more frames for micro-expressions
             content_items.append({
                 "type": "image_url",
                 "image_url": {"url": frame}
@@ -1656,7 +1795,7 @@ def analyze_face():
             model="google/gemini-2.0-flash-001",
             messages=[{
                 "role": "system",
-                "content": "You are a professional clinical wellness analyzer. Output MUST be in JSON format: {'emotion': 'string', 'confidence': number, 'mood': 'string', 'insight': 'string', 'suggestions': []}"
+                "content": "You are a clinical neuro-ophthalmologist and psychologist specializing in expression analysis. Output ONLY raw JSON."
             }, {
                 "role": "user",
                 "content": content_items

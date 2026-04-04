@@ -151,7 +151,8 @@ const InitialAssessment = ({ onComplete }) => {
 
                     <button
                         onClick={() => {
-                            sessionStorage.setItem('assessmentShownThisSession', 'true');
+                            const today = new Date().toISOString().split('T')[0];
+                            localStorage.setItem('lastAssessmentDate', today);
                             onComplete();
                         }}
                         className="w-full py-5 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-sm hover:scale-105 active:scale-95 transition-all shadow-xl"

@@ -10,7 +10,7 @@ import {
     CheckCircle2, Circle, AlertCircle, MapPin, Phone,
     Search, Filter, ArrowUpRight, Clock, ShieldCheck, Shield,
     X, AlertTriangle, Users, Stethoscope,
-    Bell, Droplets, Scale, Ruler, Map, Edit3, Camera, Navigation
+    Bell, Droplets, Scale, Ruler, Map, Edit3, Camera, Navigation, Sparkles
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -46,7 +46,11 @@ const DashboardPage = () => {
     const [selectedReport, setSelectedReport] = useState(null);
     const [selectedPlan, setSelectedPlan] = useState(null);
     const [assessmentHistory, setAssessmentHistory] = useState([]);
-    const [assessmentCompleted, setAssessmentCompleted] = useState(!!sessionStorage.getItem('assessmentShownThisSession'));
+    const [assessmentCompleted, setAssessmentCompleted] = useState(() => {
+        const lastDate = localStorage.getItem('lastAssessmentDate');
+        const today = new Date().toISOString().split('T')[0];
+        return lastDate === today;
+    });
     const [downloadingId, setDownloadingId] = useState(null);
     const [isScanningDocs, setIsScanningDocs] = useState(false);
     const [isMemoryPalaceOpen, setIsMemoryPalaceOpen] = useState(false);
@@ -144,7 +148,9 @@ const DashboardPage = () => {
                     api.get('/user/profile')
                 ]);
 
-                setAssessmentCompleted(!!sessionStorage.getItem('assessmentShownThisSession'));
+                const today = new Date().toISOString().split('T')[0];
+                const lastDate = localStorage.getItem('lastAssessmentDate');
+                setAssessmentCompleted(lastDate === today);
                 if (sRes.data.md_score) setMdScore(sRes.data.md_score);
                 if (sRes.data.health_trajectory) setHealthTrajectory(sRes.data.health_trajectory);
                 if (sRes.data.triage_summary) setTriageSummary(sRes.data.triage_summary);
@@ -732,25 +738,47 @@ const DashboardPage = () => {
                                         <p className="mt-4 text-[10px] font-medium opacity-60">Based on analysis of 12 patterns</p>
                                     </PremiumCard>
 
-                                    <PremiumCard className="relative overflow-hidden flex flex-col justify-between">
-                                        <div className="absolute top-0 right-0 p-6 opacity-10">
-                                            <Brain size={100} className="text-primary" />
+                                    <PremiumCard className="relative overflow-hidden flex flex-col justify-between border-indigo-500/20 bg-indigo-50/10">
+                                         <div className="absolute top-0 right-0 p-6 opacity-10">
+                                             <Sparkles size={100} className="text-indigo-500" />
+                                         </div>
+                                         <div className="space-y-4">
+                                             <div className="flex justify-between items-start">
+                                                 <div>
+                                                     <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-1">AI Behavioral Profile</h4>
+                                                     <p className="text-xl font-black">{userInsights?.dominant_vibe || 'Analyzing Patterns...'}</p>
+                                                 </div>
+                                                 <div className="px-3 py-1 bg-indigo-500 text-white rounded-full text-[8px] font-black uppercase tracking-widest">
+                                                     Live Engine
+                                                 </div>
+                                             </div>
+                                             
+                                             {userInsights?.clinical_insight ? (
+                                                 <div className="space-y-3">
+                                                      <p className="text-[11px] font-medium leading-relaxed opacity-70 line-clamp-3 italic">
+                                                          "{userInsights.clinical_insight}"
+                                                      </p>
+                                                      <div className="space-y-1">
+                                                          <div className="flex justify-between text-[8px] font-black uppercase tracking-widest opacity-50">
+                                                              <span>Mental Resilience</span>
+                                                              <span>{userInsights.resilience_score}%</span>
+                                                          </div>
+                                                          <div className="h-1.5 w-full bg-indigo-100 dark:bg-white/5 rounded-full overflow-hidden">
+                                                              <motion.div 
+                                                                  initial={{ width: 0 }}
+                                                                  animate={{ width: `${userInsights.resilience_score}%` }}
+                                                                  className="h-full bg-indigo-500"
+                                                              />
+                                                          </div>
+                                                      </div>
+                                                 </div>
+                                            ) : (
+                                                <div className="py-8 flex flex-col items-center justify-center text-center space-y-2 opacity-30">
+                                                    <Brain size={32} />
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest leading-tight">Insufficient Multimodal Data to <br/> Unlock Neural Profile</p>
+                                                </div>
+                                            )}
                                         </div>
-                                        <div>
-                                            <h4 className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">Clinical Triage (MD-Score)</h4>
-                                            <div className="flex items-baseline gap-2">
-                                                <span className="text-5xl font-black text-primary">{mdScore}</span>
-                                                <span className="text-sm font-bold opacity-40">/ 100</span>
-                                            </div>
-                                        </div>
-                                        <div className="mt-4 p-4 rounded-2xl bg-primary/5 border border-primary/10">
-                                            <p className="text-[10px] font-bold leading-relaxed opacity-70 italic">
-                                                "{triageSummary || "AI is currently aggregating clinical markers for your next 24h forecast..."}"
-                                            </p>
-                                        </div>
-                                        <Link to="/chat" className="absolute bottom-6 right-6 p-3 bg-primary text-white rounded-2xl shadow-lg shadow-primary/20 hover:scale-110 active:scale-90 transition-all">
-                                            <ArrowUpRight size={20} />
-                                        </Link>
                                     </PremiumCard>
                                 </div>
 
@@ -1548,7 +1576,8 @@ const DashboardPage = () => {
 
             {!assessmentCompleted && (
                 <InitialAssessment onComplete={async () => {
-                    sessionStorage.setItem('assessmentShownThisSession', 'true');
+                    const today = new Date().toISOString().split('T')[0];
+                    localStorage.setItem('lastAssessmentDate', today);
                     setAssessmentCompleted(true);
                     const aRes = await api.get('/assessment/history');
                     setAssessmentHistory(aRes.data);

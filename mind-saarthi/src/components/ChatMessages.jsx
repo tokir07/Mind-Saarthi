@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Shield, CheckCheck, Smile, ThumbsUp, Heart } from 'lucide-react';
+import { Bot, Shield, CheckCheck, Smile, ThumbsUp, Heart, Sparkles } from 'lucide-react';
 import { useTheme } from '../ThemeContext';
 
 const ChatMessages = ({ messages, isTyping, scrollRef, hasActivity }) => {
@@ -64,49 +64,53 @@ const ChatMessages = ({ messages, isTyping, scrollRef, hasActivity }) => {
                             <div className="flex flex-col gap-1.5 group">
                                 <div className={`relative px-5 py-3.5 rounded-3xl shadow-sm transition-all duration-300 ${
                                     msg.type === 'user'
-                                        ? 'bg-primary text-white rounded-tr-none'
-                                        : 'glass-card border-primary/10 dark:border-primary/5 rounded-tl-none'
+                                        ? 'bg-gradient-to-br from-primary via-primary to-indigo-600 text-white rounded-tr-none shadow-lg shadow-primary/20'
+                                        : 'glass-card border-primary/10 dark:border-primary/5 rounded-tl-none bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm'
                                 }`}>
-                                    <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-
-                                    {/* Smart Coping Suggestion */}
-                                    {msg.type === 'bot' && msg.suggestion && (
-                                        <motion.div 
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            className="mt-4 p-3.5 bg-primary/5 dark:bg-white/5 border border-primary/20 dark:border-white/10 rounded-2xl flex items-start gap-3 shadow-sm"
-                                        >
-                                            <div className="p-1.5 bg-primary/10 rounded-lg text-primary">
-                                                <Heart size={14} fill="currentColor" className="opacity-80" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">MindSaarthi Tip</h4>
-                                                <p className="text-[13px] font-semibold leading-relaxed leading-tight text-slate-600 dark:text-slate-300">
-                                                    {msg.suggestion}
-                                                </p>
-                                            </div>
-                                        </motion.div>
-                                    )}
-
-                                    {/* Risk/Sentiment Badges for Bot */}
-                                    {msg.type === 'bot' && (msg.risk || msg.sentiment) && (
-                                        <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2">
-                                            {msg.risk && (
-                                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg ${
-                                                    msg.risk === 'High' ? 'bg-accent/10 text-accent' :
-                                                    msg.risk === 'Moderate' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' :
-                                                    'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                                                }`}>
-                                                    {msg.risk} Risk
-                                                </span>
-                                            )}
-                                            {msg.sentiment && (
-                                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-                                                    {msg.sentiment}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
+                                    <p className="text-[15px] leading-relaxed font-medium whitespace-pre-wrap">{msg.text}</p>
+ 
+                                     {/* Smart Coping Suggestion */}
+                                     {msg.type === 'bot' && msg.suggestion && (
+                                         <motion.div 
+                                             initial={{ opacity: 0, scale: 0.95 }}
+                                             animate={{ opacity: 1, scale: 1 }}
+                                             whileHover={{ scale: 1.02 }}
+                                             className="mt-4 p-4 bg-primary/5 dark:bg-white/5 border border-primary/20 dark:border-white/10 rounded-2xl flex items-start gap-4 shadow-sm"
+                                         >
+                                             <div className="p-2 bg-primary/10 rounded-xl text-primary shrink-0">
+                                                 <Heart size={16} fill="currentColor" className="opacity-80" />
+                                             </div>
+                                             <div className="flex-1">
+                                                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-1.5 flex items-center gap-2">
+                                                     <Sparkles size={12} /> MindSaarthi Recommendation
+                                                 </h4>
+                                                 <p className="text-[13px] font-bold leading-relaxed text-slate-700 dark:text-slate-200">
+                                                     {msg.suggestion}
+                                                 </p>
+                                             </div>
+                                         </motion.div>
+                                     )}
+ 
+                                     {/* Risk/Sentiment Badges for Bot */}
+                                     {msg.type === 'bot' && (msg.risk || msg.sentiment) && (
+                                         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2">
+                                             {msg.risk && (
+                                                 <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full border ${
+                                                     msg.risk === 'High' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                                                     msg.risk === 'Moderate' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                                                     'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                                 }`}>
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-current inline-block mr-1.5 animate-pulse" />
+                                                     {msg.risk} Priority
+                                                 </span>
+                                             )}
+                                             {msg.sentiment && (
+                                                 <span className="text-[10px] font-black uppercase px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-transparent">
+                                                     Analyzed: {msg.sentiment}
+                                                 </span>
+                                             )}
+                                         </div>
+                                     )}
 
                                     {/* Action Buttons (Visible on hover) */}
                                     <div className={`absolute -bottom-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${msg.type === 'user' ? 'right-0' : 'left-0'}`}>
