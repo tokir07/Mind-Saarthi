@@ -40,9 +40,10 @@ print(f"DEBUG: Loaded .env from {env_path}")
 print(f"DEBUG: OPENROUTER_API_KEY value: {os.getenv('OPENROUTER_API_KEY')[:5] if os.getenv('OPENROUTER_API_KEY') else 'NONE'}")
 
 app = Flask(__name__)
-# Robust CORS with credentials support and preflight handling
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Robust CORS with credentials support and preflight handling. Required for deployment.
+allowed_origins = [os.getenv('FRONTEND_URL', 'http://localhost:5173'), "http://localhost:5173", "https://mind-saarthi-silk.vercel.app"]
+CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
+socketio = SocketIO(app, cors_allowed_origins=allowed_origins)
 
 @app.route("/api/reverse-geocode", methods=["GET"])
 def reverse_geocode():

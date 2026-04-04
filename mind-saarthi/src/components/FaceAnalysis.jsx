@@ -6,7 +6,7 @@ import {
   RefreshCw, Info, ThumbsUp, Activity,
   Maximize2
 } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 import { useAuth } from '../AuthContext';
 
 const FaceAnalysis = ({ onComplete, onCancel }) => {
@@ -96,9 +96,9 @@ const FaceAnalysis = ({ onComplete, onCancel }) => {
     speak("Scan successful. Deep analyzing expressions now.");
 
     try {
-      const resp = await axios.post('http://localhost:5000/analyze-face', {
+      const resp = await api.post('/analyze-face', {
         frames: framesRef.current
-      }, { headers: { Authorization: `Bearer ${token}` } });
+      });
 
       setReport(resp.data);
       setStatus("Complete");
